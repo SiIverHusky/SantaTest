@@ -8,6 +8,7 @@ set(SOURCES "audio/audio_codec.cc"
             "audio/codecs/es8389_audio_codec.cc"
             "audio/codecs/dummy_audio_codec.cc"
             "audio/processors/audio_debugger.cc"
+            "audio/codecs/santa_audio_codec.cc"
             "led/single_led.cc"
             "led/circular_strip.cc"
             "led/gpio_led.cc"
@@ -186,6 +187,8 @@ elseif(CONFIG_BOARD_TYPE_MIXGO_NOVA)
     set(BOARD_TYPE "mixgo-nova")
 elseif(CONFIG_BOARD_TYPE_GENJUTECH_S3_1_54TFT)
     set(BOARD_TYPE "genjutech-s3-1.54tft")
+elseif(CONFIG_BOARD_TYPE_HEYSANTA)
+    set(BOARD_TYPE "HeySanta")
 elseif(CONFIG_BOARD_TYPE_ESP32_CGC)
     set(BOARD_TYPE "esp32-cgc")
 elseif(CONFIG_BOARD_TYPE_ESP32_CGC_144)
@@ -328,6 +331,28 @@ foreach(FILENAME IN LISTS FILES_TO_DOWNLOAD)
         endif()
     endif()
 endforeach()
+endif()
+
+if(CONFIG_BOARD_TYPE_HEYSANTA)
+set(URL "https://github.com/espressif2022/image_player/raw/main/test_apps/test_8bit")
+set(SPIFFS_DIR "${CMAKE_BINARY_DIR}/emoji")
+file(MAKE_DIRECTORY ${SPIFFS_DIR})
+set(FILES_TO_DOWNLOAD "")
+list(APPEND FILES_TO_DOWNLOAD "heart.aaf" "bell.aaf" "star.aaf" "Blinking.aaf" "snowman.aaf"
+    "cookie.aaf" "Whole_elf.aaf" "sleep.aaf" "deer.aaf")
+file(COPY "${CMAKE_SOURCE_DIR}/emoji/heart.aaf" DESTINATION "${SPIFFS_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/emoji/bell.aaf" DESTINATION "${SPIFFS_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/emoji/star.aaf" DESTINATION "${SPIFFS_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/emoji/Blinking.aaf" DESTINATION "${SPIFFS_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/emoji/snowman.aaf" DESTINATION "${SPIFFS_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/emoji/cookie.aaf" DESTINATION "${SPIFFS_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/emoji/Whole_elf.aaf" DESTINATION "${SPIFFS_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/emoji/sleep.aaf" DESTINATION "${SPIFFS_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/emoji/deer.aaf" DESTINATION "${SPIFFS_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/emoji/cross.aaf" DESTINATION "${SPIFFS_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/emoji/happy.aaf" DESTINATION "${SPIFFS_DIR}")
+
+
 
 spiffs_create_partition_assets(
     assets_A

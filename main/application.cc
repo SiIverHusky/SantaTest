@@ -17,7 +17,6 @@
 
 #define TAG "Application"
 
-
 static const char* const STATE_STRINGS[] = {
     "unknown",
     "starting",
@@ -35,6 +34,7 @@ static const char* const STATE_STRINGS[] = {
 
 Application::Application() {
     event_group_ = xEventGroupCreate();
+    web_control_panel_active_ = false; // Initialize the web control panel flag
 
 #if CONFIG_USE_DEVICE_AEC && CONFIG_USE_SERVER_AEC
 #error "CONFIG_USE_DEVICE_AEC and CONFIG_USE_SERVER_AEC cannot be enabled at the same time"
@@ -383,7 +383,7 @@ void Application::Start() {
         xEventGroupSetBits(event_group_, MAIN_EVENT_ERROR);
     });
     protocol_->OnIncomingAudio([this](std::unique_ptr<AudioStreamPacket> packet) {
-        if (device_state_ == kDeviceStateSpeaking) {
+        if (device_state_ == kDeviceStateSpeaking || web_control_panel_active_) {
             audio_service_.PushPacketToDecodeQueue(std::move(packet));
         }
     });
@@ -407,20 +407,115 @@ void Application::Start() {
         auto type = cJSON_GetObjectItem(root, "type");
         if (strcmp(type->valuestring, "tts") == 0) {
             auto state = cJSON_GetObjectItem(root, "state");
+
+#ifdef CONFIG_BOARD_TYPE_HEYSANTA
+            // Declare static variables outside of the if blocks so they're shared
+            static std::chrono::steady_clock::time_point tts_start_time;
+            static std::chrono::steady_clock::time_point last_bell_time;
+            static std::chrono::steady_clock::time_point last_mcp_time;
+            static const int BELL_COOLDOWN_MS = 10000; // 8 second cooldown between bells
+            static const int MCP_SUPPRESS_MS = 3000;  // Suppress bell for 3 seconds after MCP activity
+#endif
+
             if (strcmp(state->valuestring, "start") == 0) {
                 Schedule([this]() {
                     aborted_ = false;
-                    if (device_state_ == kDeviceStateIdle || device_state_ == kDeviceStateListening) {
+                    
+                    // If web control panel is active, force speaking state regardless of current state
+                    if (web_control_panel_active_) {
+                        SetDeviceState(kDeviceStateSpeaking);
+                    } else if (device_state_ == kDeviceStateIdle || device_state_ == kDeviceStateListening) {
                         SetDeviceState(kDeviceStateSpeaking);
                     }
                 });
+
+#ifdef CONFIG_BOARD_TYPE_HEYSANTA
+                // Only play bell if NOT from web control panel
+                if (!web_control_panel_active_) {
+                    auto now = std::chrono::steady_clock::now();
+                    auto time_since_last_bell = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_bell_time).count();
+                    auto time_since_mcp = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_mcp_time).count();
+                    
+                    // Record the start time of TTS
+                    tts_start_time = now;
+                    
+                    // Don't play bell if:
+                    // 1. Not enough time since last bell (cooldown)
+                    // 2. Recent MCP activity (likely MCP response)
+                    bool should_play_bell = (time_since_last_bell > BELL_COOLDOWN_MS) && 
+                                        (time_since_mcp > MCP_SUPPRESS_MS || last_mcp_time.time_since_epoch().count() == 0);
+                    
+                    if (should_play_bell) {
+                        ESP_LOGI(TAG, "TTS start - playing bell (bell cooldown: %d ms, MCP time: %d ms)", 
+                                (int)time_since_last_bell, (int)time_since_mcp);
+                        
+                        Schedule([this]() {
+                            ESP_LOGI(TAG, "Playing bell sound - device state: %s", STATE_STRINGS[device_state_]);
+                            ESP_LOGI(TAG, "Playing P3_TAHU for HEYSANTA");
+                            audio_service_.PlaySound(Lang::Sounds::P3_TAHU);
+                            ESP_LOGI(TAG, "P3_TAHU queued for HEYSANTA");
+                        });
+                        
+                        last_bell_time = now;
+                    } else {
+                        ESP_LOGI(TAG, "TTS start - skipping bell (bell cooldown: %d ms, MCP suppress: %d ms)", 
+                                (int)time_since_last_bell, (int)time_since_mcp);
+                    }
+                } else {
+                    ESP_LOGI(TAG, "Web control panel active - skipping bell sound");
+                }
+#endif
             } else if (strcmp(state->valuestring, "stop") == 0) {
                 Schedule([this]() {
                     if (device_state_ == kDeviceStateSpeaking) {
-                        if (listening_mode_ == kListeningModeManualStop) {
-                            SetDeviceState(kDeviceStateIdle);
+#ifdef CONFIG_BOARD_TYPE_HEYSANTA
+                        // Only do shake logic if NOT from web control panel
+                        if (!web_control_panel_active_) {
+                            // Calculate the duration of TTS
+                            auto tts_end_time = std::chrono::steady_clock::now();
+                            auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(tts_end_time - tts_start_time).count();
+                            ESP_LOGI(TAG, "TTS sequence complete: %d ms", (int)duration_ms);
+
+                            // Only trigger stop shake for longer TTS sequences (likely actual speech, not MCP responses)
+                            if (duration_ms > 2000) { // Only for TTS longer than 2 seconds
+                                ESP_LOGI(TAG, "Long TTS detected (%d ms), triggering stop shake", (int)duration_ms);
+
+                                Schedule([this]() {
+                                    ESP_LOGI(TAG, "stop Head shake ");
+                                    static int mcp_id_counter = 1000;
+                                    mcp_id_counter++;
+                                    char mcp_message[256];
+                                    snprintf(mcp_message, sizeof(mcp_message),
+                                        "{\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"tools/call\",\"params\":{\"name\":\"self_chassis_shake_body_stop\",\"arguments\":{}}}",
+                                        mcp_id_counter);
+                                    McpServer::GetInstance().ParseMessage(mcp_message);
+                                    
+                                    // Update MCP timestamp to suppress future bells
+                                    static std::chrono::steady_clock::time_point last_mcp_time;
+                                    last_mcp_time = std::chrono::steady_clock::now();
+                                });
+                            } else {
+                                ESP_LOGI(TAG, "Short TTS detected (%d ms), skipping stop shake", (int)duration_ms);
+                            }
                         } else {
-                            SetDeviceState(kDeviceStateListening);
+                            ESP_LOGI(TAG, "Web control panel active - skipping shake logic");
+                        }
+#endif
+
+                        // Always go to idle first to clear audio queues and reset state
+                        SetDeviceState(kDeviceStateIdle);
+                        
+                        // Different behavior for web panel vs normal conversation
+                        if (web_control_panel_active_) {
+                            // Web panel: stay idle (like before)
+                            ESP_LOGI(TAG, "Web panel active - staying in idle state");
+                        } else {
+                            // Normal conversation: follow standard mode logic
+                            if (listening_mode_ == kListeningModeManualStop) {
+                                SetDeviceState(kDeviceStateIdle);
+                            } else {
+                                SetDeviceState(kDeviceStateListening);
+                            }
                         }
                     }
                 });
@@ -437,6 +532,34 @@ void Application::Start() {
             auto text = cJSON_GetObjectItem(root, "text");
             if (cJSON_IsString(text)) {
                 ESP_LOGI(TAG, ">> %s", text->valuestring);
+#ifdef CONFIG_BOARD_TYPE_HEYSANTA
+                // Configure shake probability (0-100 percent)
+                static const int SHAKE_PROBABILITY = 100; // Change this value to adjust chance (0-100)
+                
+                // Generate random number between 0-99
+                int random_chance = esp_random() % 100;
+                
+                if (random_chance < SHAKE_PROBABILITY) {
+                    ESP_LOGI(TAG, "User input detected, triggering body shake (chance: %d/%d)", random_chance, SHAKE_PROBABILITY);
+                    Schedule([this]() {
+                        ESP_LOGI(TAG, "Trying to trigger shake...");
+                        static int mcp_id_counter = 1000;
+                        mcp_id_counter++;
+                        char mcp_message[256];
+                        snprintf(mcp_message, sizeof(mcp_message),
+                            "{\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"tools/call\",\"params\":{\"name\":\"self_chassis_shake_body_start\",\"arguments\":{}}}",
+                            mcp_id_counter);
+                        McpServer::GetInstance().ParseMessage(mcp_message);
+                        ESP_LOGI(TAG, "Shake command sent via MCP with ID %d", mcp_id_counter);
+                        
+                        // Update MCP timestamp when sending MCP commands
+                        static std::chrono::steady_clock::time_point last_mcp_time;
+                        last_mcp_time = std::chrono::steady_clock::now();
+                    });
+                } else {
+                    ESP_LOGI(TAG, "User input detected, no shake this time (chance: %d/%d)", random_chance, SHAKE_PROBABILITY);
+                }
+#endif
                 Schedule([this, display, message = std::string(text->valuestring)]() {
                     display->SetChatMessage("user", message.c_str());
                 });
@@ -449,6 +572,12 @@ void Application::Start() {
                 });
             }
         } else if (strcmp(type->valuestring, "mcp") == 0) {
+#ifdef CONFIG_BOARD_TYPE_HEYSANTA
+            // Update MCP activity timestamp whenever we receive MCP messages
+            static std::chrono::steady_clock::time_point last_mcp_time;
+            last_mcp_time = std::chrono::steady_clock::now();
+            ESP_LOGI(TAG, "MCP activity detected, will suppress bells for next 3 seconds");
+#endif
             auto payload = cJSON_GetObjectItem(root, "payload");
             if (cJSON_IsObject(payload)) {
                 McpServer::GetInstance().ParseMessage(payload);
@@ -501,7 +630,11 @@ void Application::Start() {
         display->ShowNotification(message.c_str());
         display->SetChatMessage("system", "");
         // Play the success sound to indicate the device is ready
+#ifdef CONFIG_BOARD_TYPE_HEYSANTA
+        audio_service_.PlaySound(Lang::Sounds::P3_BALLS);
+#else
         audio_service_.PlaySound(Lang::Sounds::P3_SUCCESS);
+#endif
     }
 
     // Print heap stats
@@ -770,4 +903,91 @@ void Application::SetAecMode(AecMode mode) {
 
 void Application::PlaySound(const std::string_view& sound) {
     audio_service_.PlaySound(sound);
+}
+
+void Application::SpeakText(const std::string& text) {
+    ESP_LOGI("Application", "🎅 === SpeakText() CALLED ===");
+    ESP_LOGI("Application", "🎅 Input text: '%s' (length: %d)", text.c_str(), (int)text.length());
+    
+    if (text.empty()) {
+        ESP_LOGW("Application", "🎅 Text is empty, not sending to server");
+        return;
+    }
+    
+    // URL decode the text first
+    std::string decoded_text;
+    for (size_t i = 0; i < text.length(); i++) {
+        if (text[i] == '+') {
+            decoded_text += ' ';
+        } else if (text[i] == '%' && i + 2 < text.length()) {
+            // Convert hex to char
+            std::string hex = text.substr(i + 1, 2);
+            char decoded_char = (char)strtol(hex.c_str(), NULL, 16);
+            decoded_text += decoded_char;
+            i += 2; // Skip the two hex digits
+        } else {
+            decoded_text += text[i];
+        }
+    }
+    
+    ESP_LOGI("Application", "🎅 Decoded text: '%s'", decoded_text.c_str());
+    
+    // Set web control panel active to ensure TTS plays
+    SetWebControlPanelActive(true);
+    
+    // Prepare the device for TTS playback
+    Schedule([this]() {
+        ESP_LOGI("Application", "🎅 Preparing device for TTS playback");
+        
+        // Make sure audio channel is open
+        if (!protocol_->IsAudioChannelOpened()) {
+            ESP_LOGI("Application", "🎅 Opening audio channel for TTS");
+            SetDeviceState(kDeviceStateConnecting);
+            if (!protocol_->OpenAudioChannel()) {
+                ESP_LOGE("Application", "🎅 Failed to open audio channel");
+                return;
+            }
+        }
+        
+        // Force speaking state
+        ESP_LOGI("Application", "🎅 Setting device to speaking state");
+        SetDeviceState(kDeviceStateSpeaking);
+        
+        ESP_LOGI("Application", "🎅 Audio decoder reset");
+    });
+    
+    // Create MCP message for text-to-speech
+    uint32_t message_id = esp_random() % 10000;
+    ESP_LOGI("Application", "🎅 Generated message ID: %lu", (unsigned long)message_id);
+    
+    std::string mcp_message = "{\"jsonrpc\":\"2.0\",\"id\":" + 
+                             std::to_string(message_id) + 
+                             ",\"method\":\"tts/speak\",\"params\":{\"text\":\"" + 
+                             decoded_text + "\",\"voice\":\"santa\"}}";
+    
+    ESP_LOGI("Application", "🎅 Created MCP message: %s", mcp_message.c_str());
+    ESP_LOGI("Application", "🎅 MCP message length: %d", (int)mcp_message.length());
+    
+    // Check if protocol is available
+    if (!protocol_) {
+        ESP_LOGE("Application", "🎅 ERROR: protocol_ is NULL! Cannot send message");
+        return;
+    }
+    
+    ESP_LOGI("Application", "🎅 Protocol available, sending MCP message...");
+    
+    // Send the MCP message
+    protocol_->SendMcpMessage(mcp_message);
+    
+    ESP_LOGI("Application", "🎅 === MCP MESSAGE SENT TO SERVER ===");
+    ESP_LOGI("Application", "🎅 SpeakText() completed successfully");
+}
+
+// Add these methods for web control panel support
+void Application::SetWebControlPanelActive(bool active) {
+    web_control_panel_active_ = active;
+}
+
+bool Application::IsWebControlPanelActive() const {
+    return web_control_panel_active_;
 }

@@ -52,13 +52,16 @@ public:
     void ToggleChatState();
     void StartListening();
     void StopListening();
+    void SpeakText(const std::string& text);
     void Reboot();
     void WakeWordInvoke(const std::string& wake_word);
+    void SetWebControlPanelActive(bool active);
+    bool IsWebControlPanelActive() const;
+    void PlaySound(const std::string_view& sound);
     bool CanEnterSleepMode();
     void SendMcpMessage(const std::string& payload);
     void SetAecMode(AecMode mode);
     AecMode GetAecMode() const { return aec_mode_; }
-    void PlaySound(const std::string_view& sound);
     AudioService& GetAudioService() { return audio_service_; }
 
 private:
@@ -76,6 +79,7 @@ private:
     std::string last_error_message_;
     AudioService audio_service_;
 
+    bool web_control_panel_active_ = false;
     bool has_server_time_ = false;
     bool aborted_ = false;
     int clock_ticks_ = 0;
