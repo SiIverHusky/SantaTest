@@ -64,6 +64,17 @@ public:
     AecMode GetAecMode() const { return aec_mode_; }
     AudioService& GetAudioService() { return audio_service_; }
 
+    // Motor control functions - ADDED for Santa project
+    void TriggerDance();
+    void TriggerHeadShake();
+    void TriggerHipShake();
+    void ChangeEmotion(const std::string& emotion);
+
+    // Helper functions - ADDED
+    void SetStatus(const char* status);
+    void SetEmotion(const char* emotion);
+    void Log(const char* message);
+
 private:
     Application();
     ~Application();
