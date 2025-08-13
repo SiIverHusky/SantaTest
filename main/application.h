@@ -17,6 +17,10 @@
 #include "audio_service.h"
 #include "device_state_event.h"
 
+#if CONFIG_BT_NIMBLE_ENABLED
+#include "protocols/ble_protocol.h"
+#endif
+
 #define MAIN_EVENT_SCHEDULE (1 << 0)
 #define MAIN_EVENT_SEND_AUDIO (1 << 1)
 #define MAIN_EVENT_WAKE_WORD_DETECTED (1 << 2)
@@ -79,7 +83,12 @@ private:
     std::string last_error_message_;
     AudioService audio_service_;
 
+#if CONFIG_BT_NIMBLE_ENABLED
+    std::unique_ptr<BleProtocol> ble_protocol_;
+#endif
+
     bool web_control_panel_active_ = false;
+    bool ble_mcp_active_ = false;  // Track when BLE MCP command is being processed
     bool has_server_time_ = false;
     bool aborted_ = false;
     int clock_ticks_ = 0;
@@ -90,6 +99,8 @@ private:
     void ShowActivationCode(const std::string& code, const std::string& message);
     void OnClockTimer();
     void SetListeningMode(ListeningMode mode);
+    void ProcessBleMcpCommand(const cJSON* payload);
+    void SendBleMcpResponse(const std::string& response);
 };
 
 #endif // _APPLICATION_H_
