@@ -100,7 +100,10 @@ private:
     void OnClockTimer();
     void SetListeningMode(ListeningMode mode);
     void ProcessBleMcpCommand(const cJSON* payload);
+    void ProcessBlePluginCommand(const cJSON* payload);
+    void ProcessBleTextCommand(const std::string& text);
     void SendBleMcpResponse(const std::string& response);
+    void SendBleTextResponse(const std::string& status, const std::string& message);
 };
 
 #endif // _APPLICATION_H_
