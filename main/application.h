@@ -59,8 +59,6 @@ public:
     void SpeakText(const std::string& text);
     void Reboot();
     void WakeWordInvoke(const std::string& wake_word);
-    void SetWebControlPanelActive(bool active);
-    bool IsWebControlPanelActive() const;
     void PlaySound(const std::string_view& sound);
     bool CanEnterSleepMode();
     void SendMcpMessage(const std::string& payload);
@@ -87,11 +85,12 @@ private:
     std::unique_ptr<BleProtocol> ble_protocol_;
 #endif
 
-    bool web_control_panel_active_ = false;
     bool ble_mcp_active_ = false;  // Track when BLE MCP command is being processed
+    bool ble_activity_mode_ = false;  // Track if BLE activity mode is active
     bool has_server_time_ = false;
     bool aborted_ = false;
     int clock_ticks_ = 0;
+    esp_timer_handle_t ble_activity_timer_ = nullptr;  // Timer for BLE activity timeout (10 minutes)
     TaskHandle_t check_new_version_task_handle_ = nullptr;
 
     void OnWakeWordDetected();
@@ -104,6 +103,14 @@ private:
     void ProcessBleTextCommand(const std::string& text);
     void SendBleMcpResponse(const std::string& response);
     void SendBleTextResponse(const std::string& status, const std::string& message);
+    
+    // BLE Activity Management
+    void ProcessBleWakeCommand();
+    void ProcessBleRefreshActivityCommand();
+    void StartBleActivityMode();
+    void RefreshBleActivity();
+    void StopBleActivityMode();
+    void OnBleActivityTimeout();
 };
 
 #endif // _APPLICATION_H_

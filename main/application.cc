@@ -36,7 +36,6 @@ static const char* const STATE_STRINGS[] = {
 
 Application::Application() {
     event_group_ = xEventGroupCreate();
-    web_control_panel_active_ = false; // Initialize the web control panel flag
 
 #if CONFIG_USE_DEVICE_AEC && CONFIG_USE_SERVER_AEC
 #error "CONFIG_USE_DEVICE_AEC and CONFIG_USE_SERVER_AEC cannot be enabled at the same time"
@@ -59,6 +58,19 @@ Application::Application() {
         .skip_unhandled_events = true
     };
     esp_timer_create(&clock_timer_args, &clock_timer_handle_);
+    
+    // Create BLE activity timer (10 minutes timeout)
+    esp_timer_create_args_t ble_activity_timer_args = {
+        .callback = [](void* arg) {
+            Application* app = (Application*)arg;
+            app->OnBleActivityTimeout();
+        },
+        .arg = this,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "ble_activity_timer",
+        .skip_unhandled_events = true
+    };
+    esp_timer_create(&ble_activity_timer_args, &ble_activity_timer_);
 }
 
 Application::~Application() {
@@ -71,6 +83,10 @@ Application::~Application() {
     if (clock_timer_handle_ != nullptr) {
         esp_timer_stop(clock_timer_handle_);
         esp_timer_delete(clock_timer_handle_);
+    }
+    if (ble_activity_timer_ != nullptr) {
+        esp_timer_stop(ble_activity_timer_);
+        esp_timer_delete(ble_activity_timer_);
     }
     vEventGroupDelete(event_group_);
 }
@@ -391,7 +407,7 @@ void Application::Start() {
         xEventGroupSetBits(event_group_, MAIN_EVENT_ERROR);
     });
     protocol_->OnIncomingAudio([this](std::unique_ptr<AudioStreamPacket> packet) {
-        if (device_state_ == kDeviceStateSpeaking || web_control_panel_active_) {
+        if (device_state_ == kDeviceStateSpeaking) {
             audio_service_.PushPacketToDecodeQueue(std::move(packet));
         }
     });
@@ -429,101 +445,83 @@ void Application::Start() {
                 Schedule([this]() {
                     aborted_ = false;
                     
-                    // If web control panel is active, force speaking state regardless of current state
-                    if (web_control_panel_active_) {
-                        SetDeviceState(kDeviceStateSpeaking);
-                    } else if (device_state_ == kDeviceStateIdle || device_state_ == kDeviceStateListening) {
+                    if (device_state_ == kDeviceStateIdle || device_state_ == kDeviceStateListening) {
                         SetDeviceState(kDeviceStateSpeaking);
                     }
                 });
 
 #ifdef CONFIG_BOARD_TYPE_HEYSANTA
-                // Only play bell if NOT from web control panel
-                if (!web_control_panel_active_) {
-                    auto now = std::chrono::steady_clock::now();
-                    auto time_since_last_bell = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_bell_time).count();
-                    auto time_since_mcp = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_mcp_time).count();
+                // Play bell sound for TTS start
+                auto now = std::chrono::steady_clock::now();
+                auto time_since_last_bell = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_bell_time).count();
+                auto time_since_mcp = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_mcp_time).count();
+                
+                // Record the start time of TTS
+                tts_start_time = now;
+                
+                // Don't play bell if:
+                // 1. Not enough time since last bell (cooldown)
+                // 2. Recent MCP activity (likely MCP response)
+                bool should_play_bell = (time_since_last_bell > BELL_COOLDOWN_MS) && 
+                                    (time_since_mcp > MCP_SUPPRESS_MS || last_mcp_time.time_since_epoch().count() == 0);
+                
+                if (should_play_bell) {
+                    ESP_LOGI(TAG, "TTS start - playing bell (bell cooldown: %d ms, MCP time: %d ms)", 
+                            (int)time_since_last_bell, (int)time_since_mcp);
                     
-                    // Record the start time of TTS
-                    tts_start_time = now;
+                    Schedule([this]() {
+                        ESP_LOGI(TAG, "Playing bell sound - device state: %s", STATE_STRINGS[device_state_]);
+                        ESP_LOGI(TAG, "Playing P3_TAHU for HEYSANTA");
+                        audio_service_.PlaySound(Lang::Sounds::P3_TAHU);
+                        ESP_LOGI(TAG, "P3_TAHU queued for HEYSANTA");
+                    });
                     
-                    // Don't play bell if:
-                    // 1. Not enough time since last bell (cooldown)
-                    // 2. Recent MCP activity (likely MCP response)
-                    bool should_play_bell = (time_since_last_bell > BELL_COOLDOWN_MS) && 
-                                        (time_since_mcp > MCP_SUPPRESS_MS || last_mcp_time.time_since_epoch().count() == 0);
-                    
-                    if (should_play_bell) {
-                        ESP_LOGI(TAG, "TTS start - playing bell (bell cooldown: %d ms, MCP time: %d ms)", 
-                                (int)time_since_last_bell, (int)time_since_mcp);
-                        
-                        Schedule([this]() {
-                            ESP_LOGI(TAG, "Playing bell sound - device state: %s", STATE_STRINGS[device_state_]);
-                            ESP_LOGI(TAG, "Playing P3_TAHU for HEYSANTA");
-                            audio_service_.PlaySound(Lang::Sounds::P3_TAHU);
-                            ESP_LOGI(TAG, "P3_TAHU queued for HEYSANTA");
-                        });
-                        
-                        last_bell_time = now;
-                    } else {
-                        ESP_LOGI(TAG, "TTS start - skipping bell (bell cooldown: %d ms, MCP suppress: %d ms)", 
-                                (int)time_since_last_bell, (int)time_since_mcp);
-                    }
+                    last_bell_time = now;
                 } else {
-                    ESP_LOGI(TAG, "Web control panel active - skipping bell sound");
+                    ESP_LOGI(TAG, "TTS start - skipping bell (bell cooldown: %d ms, MCP suppress: %d ms)", 
+                            (int)time_since_last_bell, (int)time_since_mcp);
                 }
 #endif
             } else if (strcmp(state->valuestring, "stop") == 0) {
                 Schedule([this]() {
                     if (device_state_ == kDeviceStateSpeaking) {
 #ifdef CONFIG_BOARD_TYPE_HEYSANTA
-                        // Only do shake logic if NOT from web control panel
-                        if (!web_control_panel_active_) {
-                            // Calculate the duration of TTS
-                            auto tts_end_time = std::chrono::steady_clock::now();
-                            auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(tts_end_time - tts_start_time).count();
-                            ESP_LOGI(TAG, "TTS sequence complete: %d ms", (int)duration_ms);
+                        // Calculate the duration of TTS
+                        auto tts_end_time = std::chrono::steady_clock::now();
+                        auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(tts_end_time - tts_start_time).count();
+                        ESP_LOGI(TAG, "TTS sequence complete: %d ms", (int)duration_ms);
 
-                            // Only trigger stop shake for longer TTS sequences (likely actual speech, not MCP responses)
-                            if (duration_ms > 2000) { // Only for TTS longer than 2 seconds
-                                ESP_LOGI(TAG, "Long TTS detected (%d ms), triggering stop shake", (int)duration_ms);
+                        // Only trigger stop shake for longer TTS sequences (likely actual speech, not MCP responses)
+                        if (duration_ms > 2000) { // Only for TTS longer than 2 seconds
+                            ESP_LOGI(TAG, "Long TTS detected (%d ms), triggering stop shake", (int)duration_ms);
 
-                                Schedule([this]() {
-                                    ESP_LOGI(TAG, "stop Head shake ");
-                                    static int mcp_id_counter = 1000;
-                                    mcp_id_counter++;
-                                    char mcp_message[256];
-                                    snprintf(mcp_message, sizeof(mcp_message),
-                                        "{\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"tools/call\",\"params\":{\"name\":\"self_chassis_shake_body_stop\",\"arguments\":{}}}",
-                                        mcp_id_counter);
-                                    McpServer::GetInstance().ParseMessage(mcp_message);
-                                    
-                                    // Update MCP timestamp to suppress future bells
-                                    static std::chrono::steady_clock::time_point last_mcp_time;
-                                    last_mcp_time = std::chrono::steady_clock::now();
-                                });
-                            } else {
-                                ESP_LOGI(TAG, "Short TTS detected (%d ms), skipping stop shake", (int)duration_ms);
-                            }
+                            Schedule([this]() {
+                                ESP_LOGI(TAG, "stop Head shake ");
+                                static int mcp_id_counter = 1000;
+                                mcp_id_counter++;
+                                char mcp_message[256];
+                                snprintf(mcp_message, sizeof(mcp_message),
+                                    "{\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"tools/call\",\"params\":{\"name\":\"self_chassis_shake_body_stop\",\"arguments\":{}}}",
+                                    mcp_id_counter);
+                                McpServer::GetInstance().ParseMessage(mcp_message);
+                                
+                                // Update MCP timestamp to suppress future bells
+                                static std::chrono::steady_clock::time_point last_mcp_time;
+                                last_mcp_time = std::chrono::steady_clock::now();
+                            });
                         } else {
-                            ESP_LOGI(TAG, "Web control panel active - skipping shake logic");
+                            ESP_LOGI(TAG, "Short TTS detected (%d ms), skipping stop shake", (int)duration_ms);
                         }
 #endif
 
                         // Always go to idle first to clear audio queues and reset state
                         SetDeviceState(kDeviceStateIdle);
                         
-                        // Different behavior for web panel vs normal conversation
-                        if (web_control_panel_active_) {
-                            // Web panel: stay idle (like before)
-                            ESP_LOGI(TAG, "Web panel active - staying in idle state");
+                        // Follow standard mode logic
+                        if (listening_mode_ == kListeningModeManualStop) {
+                            SetDeviceState(kDeviceStateIdle);
                         } else {
-                            // Normal conversation: follow standard mode logic
-                            if (listening_mode_ == kListeningModeManualStop) {
-                                SetDeviceState(kDeviceStateIdle);
-                            } else {
-                                SetDeviceState(kDeviceStateListening);
-                            }
+                            SetDeviceState(kDeviceStateListening);
                         }
                     }
                 });
@@ -644,6 +642,9 @@ void Application::Start() {
             cJSON* type = cJSON_GetObjectItem(json, "type");
             if (type && cJSON_IsString(type)) {
                 if (strcmp(type->valuestring, "mcp") == 0) {
+                    // Refresh BLE activity when MCP command is received
+                    RefreshBleActivity();
+                    
                     cJSON* payload = cJSON_GetObjectItem(json, "payload");
                     if (payload) {
                         // Convert payload to string to pass safely to scheduled function
@@ -672,6 +673,9 @@ void Application::Start() {
                         std::string text_content(text_obj->valuestring);
                         ESP_LOGI(TAG, "BLE text command received: %s", text_content.c_str());
                         
+                        // Refresh BLE activity when text command is received
+                        RefreshBleActivity();
+                        
                         // Process text-to-speech via BLE
                         Schedule([this, text_content]() {
                             ProcessBleTextCommand(text_content);
@@ -679,8 +683,18 @@ void Application::Start() {
                     } else {
                         ESP_LOGW(TAG, "BLE text command missing text field");
                     }
+                } else if (strcmp(type->valuestring, "wake") == 0) {
+                    ESP_LOGI(TAG, "BLE wake command received");
+                    Schedule([this]() {
+                        ProcessBleWakeCommand();
+                    });
+                } else if (strcmp(type->valuestring, "refreshActivity") == 0) {
+                    ESP_LOGI(TAG, "BLE refreshActivity command received");
+                    Schedule([this]() {
+                        ProcessBleRefreshActivityCommand();
+                    });
                 } else {
-                    ESP_LOGW(TAG, "BLE: Unknown command type: %s, supported types: mcp, text", type->valuestring);
+                    ESP_LOGW(TAG, "BLE: Unknown command type: %s, supported types: mcp, text, wake, refreshActivity", type->valuestring);
                 }
             } else {
                 ESP_LOGW(TAG, "BLE: Missing or invalid type field in command: %s", command.c_str());
@@ -1086,10 +1100,7 @@ void Application::ProcessBleTextCommand(const std::string& text) {
     
     ESP_LOGI(TAG, "🔵 Decoded text: '%s'", decoded_text.c_str());
     
-    // Mark web control panel as active for TTS processing (like SpeakText does)
-    SetWebControlPanelActive(true);
-    
-    // Prepare the device for TTS playback (same as SpeakText function)
+    // Prepare the device for TTS playback
     Schedule([this]() {
         ESP_LOGI(TAG, "🔵 Preparing device for TTS playback via BLE");
         
@@ -1191,9 +1202,6 @@ void Application::SpeakText(const std::string& text) {
     
     ESP_LOGI("Application", "🎅 Decoded text: '%s'", decoded_text.c_str());
     
-    // Set web control panel active to ensure TTS plays
-    SetWebControlPanelActive(true);
-    
     // Prepare the device for TTS playback
     Schedule([this]() {
         ESP_LOGI("Application", "🎅 Preparing device for TTS playback");
@@ -1242,11 +1250,152 @@ void Application::SpeakText(const std::string& text) {
     ESP_LOGI("Application", "🎅 SpeakText() completed successfully");
 }
 
-// Add these methods for web control panel support
-void Application::SetWebControlPanelActive(bool active) {
-    web_control_panel_active_ = active;
+// BLE Activity Management Functions
+void Application::ProcessBleWakeCommand() {
+    ESP_LOGI(TAG, "🔥 BLE Wake command - Starting BLE activity mode");
+    StartBleActivityMode();
+    
+    // Send response back to BLE client
+#if CONFIG_BT_NIMBLE_ENABLED
+    if (ble_protocol_ && ble_protocol_->IsConnected()) {
+        cJSON* response = cJSON_CreateObject();
+        cJSON_AddStringToObject(response, "type", "wake_response");
+        cJSON* payload = cJSON_CreateObject();
+        cJSON_AddStringToObject(payload, "status", "success");
+        cJSON_AddStringToObject(payload, "message", "Robot awakened and activity mode started");
+        cJSON_AddItemToObject(response, "payload", payload);
+        
+        char* response_str = cJSON_PrintUnformatted(response);
+        if (response_str) {
+            ble_protocol_->SendResponse(std::string(response_str));
+            cJSON_free(response_str);
+        }
+        cJSON_Delete(response);
+    }
+#endif
 }
 
-bool Application::IsWebControlPanelActive() const {
-    return web_control_panel_active_;
+void Application::ProcessBleRefreshActivityCommand() {
+    ESP_LOGI(TAG, "🔄 BLE RefreshActivity command received");
+    RefreshBleActivity();
+    
+    // Send response back to BLE client
+#if CONFIG_BT_NIMBLE_ENABLED
+    if (ble_protocol_ && ble_protocol_->IsConnected()) {
+        cJSON* response = cJSON_CreateObject();
+        cJSON_AddStringToObject(response, "type", "refreshActivity_response");
+        cJSON* payload = cJSON_CreateObject();
+        cJSON_AddStringToObject(payload, "status", "success");
+        cJSON_AddStringToObject(payload, "message", "Activity refreshed for 10 more minutes");
+        cJSON_AddItemToObject(response, "payload", payload);
+        
+        char* response_str = cJSON_PrintUnformatted(response);
+        if (response_str) {
+            ble_protocol_->SendResponse(std::string(response_str));
+            cJSON_free(response_str);
+        }
+        cJSON_Delete(response);
+    }
+#endif
+}
+
+void Application::StartBleActivityMode() {
+    if (ble_activity_mode_) {
+        ESP_LOGI(TAG, "🔥 BLE activity mode already active, refreshing timer");
+        RefreshBleActivity();
+        return;
+    }
+    
+    ESP_LOGI(TAG, "🔥 Starting BLE activity mode");
+    ble_activity_mode_ = true;
+    
+    // Play wake-up sound (boot sound)
+    audio_service_.PlaySound(Lang::Sounds::P3_POPUP);
+    
+    // Force device to connect to server if not already connected
+    Schedule([this]() {
+        if (!protocol_->IsAudioChannelOpened()) {
+            ESP_LOGI(TAG, "🔥 Opening audio channel for BLE activity mode");
+            SetDeviceState(kDeviceStateConnecting);
+            if (!protocol_->OpenAudioChannel()) {
+                ESP_LOGE(TAG, "🔥 Failed to open audio channel");
+                return;
+            }
+        }
+        SetDeviceState(kDeviceStateIdle);
+    });
+    
+    // Start the 10-minute activity timer
+    RefreshBleActivity();
+}
+
+void Application::RefreshBleActivity() {
+    if (!ble_activity_mode_) {
+        ESP_LOGD(TAG, "🔄 BLE activity mode not active, ignoring refresh");
+        return;
+    }
+    
+    ESP_LOGI(TAG, "🔄 Refreshing BLE activity timer (10 minutes)");
+    
+    // Stop existing timer if running
+    if (ble_activity_timer_) {
+        esp_timer_stop(ble_activity_timer_);
+    }
+    
+    // Start timer for 10 minutes (600,000,000 microseconds)
+    esp_timer_start_once(ble_activity_timer_, 10 * 60 * 1000000);
+}
+
+void Application::StopBleActivityMode() {
+    if (!ble_activity_mode_) {
+        ESP_LOGD(TAG, "🛑 BLE activity mode already stopped");
+        return;
+    }
+    
+    ESP_LOGI(TAG, "🛑 Stopping BLE activity mode");
+    ble_activity_mode_ = false;
+    
+    // Stop the activity timer
+    if (ble_activity_timer_) {
+        esp_timer_stop(ble_activity_timer_);
+    }
+    
+    // Disconnect from server to free resources
+    Schedule([this]() {
+        if (protocol_->IsAudioChannelOpened()) {
+            ESP_LOGI(TAG, "🛑 Closing audio channel to free resources");
+            protocol_->CloseAudioChannel();
+        }
+        SetDeviceState(kDeviceStateIdle);
+    });
+    
+    // Disconnect BLE to free resources
+#if CONFIG_BT_NIMBLE_ENABLED
+    if (ble_protocol_) {
+        ESP_LOGI(TAG, "🛑 Disconnecting BLE to free resources");
+        // Send goodbye message before disconnecting
+        if (ble_protocol_->IsConnected()) {
+            cJSON* response = cJSON_CreateObject();
+            cJSON_AddStringToObject(response, "type", "timeout_notice");
+            cJSON* payload = cJSON_CreateObject();
+            cJSON_AddStringToObject(payload, "message", "Activity timeout - disconnecting to free resources");
+            cJSON_AddItemToObject(response, "payload", payload);
+            
+            char* response_str = cJSON_PrintUnformatted(response);
+            if (response_str) {
+                ble_protocol_->SendResponse(std::string(response_str));
+                cJSON_free(response_str);
+            }
+            cJSON_Delete(response);
+        }
+        
+        // Stop BLE protocol to disconnect
+        ble_protocol_->Stop();
+    }
+#endif
+}
+
+void Application::OnBleActivityTimeout() {
+    ESP_LOGI(TAG, "⏰ BLE activity timeout reached (10 minutes)");
+    StopBleActivityMode();
 }

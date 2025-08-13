@@ -504,10 +504,7 @@ private:
 
         auto& app = Application::GetInstance();
 
-        // 1) Mark the web control panel as inactive (same as MCP tool)
-        app.SetWebControlPanelActive(false);
-
-        // 2) Send immediate response to the browser
+        // Send immediate response to the browser
         const char* response = "🔴 Santa speech control panel closed. Web server will stop shortly.";
         httpd_resp_send(req, response, strlen(response));
 
@@ -734,10 +731,6 @@ private:
                 return "❌ WiFi not connected. Please connect to WiFi first.";
             }
             
-            // Set the web control panel flag in Application
-            auto& app = Application::GetInstance();
-            app.SetWebControlPanelActive(true);
-            
             // Start the web server
             start_speech_webserver();
             
@@ -779,11 +772,8 @@ private:
         mcp_server.AddTool("close_santa_speech_panel", "关闭圣诞老人语音控制面板", PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
             ESP_LOGI(TAG, "🎅 Closing Santa speech control panel...");
             
-            // Clear the web control panel flag in Application
-            auto& app = Application::GetInstance();
-            app.SetWebControlPanelActive(false);
-            
             // Force reset the application to idle state
+            auto& app = Application::GetInstance();
             app.Schedule([&app]() {
                 app.SetDeviceState(kDeviceStateIdle);
                 
