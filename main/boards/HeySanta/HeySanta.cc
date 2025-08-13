@@ -10,6 +10,7 @@
 #include "mcp_server.h"
 #include "audio/codecs/santa_audio_codec.h"
 // #include "audio_codecs/no_audio_codec.h"
+#include "assets/lang_config.h"
 
 #include <esp_log.h>
 #include <esp_lcd_panel_vendor.h>
@@ -838,10 +839,20 @@ private:
             if (app.GetDeviceState() == kDeviceStateStarting && !WifiStation::GetInstance().IsConnected()) {
                 ResetWifiConfiguration();
             }
+            
+            // ADD SOUND BASED ON CURRENT STATE BEFORE TOGGLING
+            if (app.GetDeviceState() == kDeviceStateIdle) {
+                // Going from idle to listening - play "entering listening" sound
+                app.PlaySound(Lang::Sounds::P3_ACTIVE);  
+            } else if (app.GetDeviceState() == kDeviceStateListening) {
+                // Going from listening to idle - play "entering idle" sound  
+                app.PlaySound(Lang::Sounds::P3_DEACTIVATE); 
+            }
+            
             app.ToggleChatState();
         });
 
-#if CONFIG_USE_DEVICE_AEC
+    #if CONFIG_USE_DEVICE_AEC
         boot_button_.OnDoubleClick([this]() {
             auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateIdle) {
@@ -855,7 +866,7 @@ private:
                 app.SetAecMode(app.GetAecMode() == kAecOff ? kAecOnDeviceSide : kAecOff);
             }
         });
-#endif
+    #endif
     }
 
     void InitializeSt7789Display() {
