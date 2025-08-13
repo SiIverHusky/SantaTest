@@ -115,15 +115,14 @@ void EmojiWidget::SetEmotion(const char* emotion)
 
     using Param = std::tuple<int, bool, int>;
     static const std::unordered_map<std::string, Param> emotion_map = {
-         {"bell",       {MMAP_EMOJI_BELL_AAF,      true, 20}},
-         {"blinking",   {MMAP_EMOJI_BLINKING_AAF,  true, 24}},
-         {"cookie",     {MMAP_EMOJI_COOKIE_AAF,    true, 25}},
-         {"deer",       {MMAP_EMOJI_DEER_AAF,      true, 18}},
-         {"heart",      {MMAP_EMOJI_HEART_AAF,     true, 30}},
-         {"sleep",      {MMAP_EMOJI_SLEEP_AAF,     true, 10}},
-         {"snowman",    {MMAP_EMOJI_SNOWMAN_AAF,   true, 22}},
+         {"bell",       {MMAP_EMOJI_BELL_AAF,      true, 25}},
+         {"blinking",   {MMAP_EMOJI_BLINKING_AAF,  true, 10}},
+         {"cookie",     {MMAP_EMOJI_COOKIE_AAF,    true, 24}},
+         {"heart",      {MMAP_EMOJI_HEART_AAF,     true, 25}},
+         {"sleep",      {MMAP_EMOJI_SLEEP_AAF,     true, 24}},
+         {"snowman",    {MMAP_EMOJI_SNOWMAN_AAF,   true, 25}},
          {"star",       {MMAP_EMOJI_STAR_AAF,      true, 25}},
-         {"elf",        {MMAP_EMOJI_WHOLE_ELF_AAF, true, 25}},
+         {"elf",        {MMAP_EMOJI_WHOLE_ELF_AAF, true, 21}},
          {"wrong",      {MMAP_EMOJI_CROSS_AAF,     true, 24}},
          {"happy",      {MMAP_EMOJI_HAPPY_AAF,     true, 24}}
     };
