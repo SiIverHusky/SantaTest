@@ -20,7 +20,9 @@
 #include <algorithm>
 
 #define TAG "Ota"
-
+#define OTA_BUFFER_SIZE 4096
+#define OTA_MAX_RETRIES 3
+#define OTA_WATCHDOG_YIELD_INTERVAL 50
 
 Ota::Ota() {
 #ifdef ESP_EFUSE_BLOCK_USR_DATA
@@ -260,8 +262,9 @@ void Ota::MarkCurrentVersionValid() {
     }
 }
 
-bool Ota::Upgrade(const std::string& firmware_url) {
-    ESP_LOGI(TAG, "Upgrading firmware from %s", firmware_url.c_str());
+bool Ota::PerformUpgrade(const std::string& firmware_url) {
+    ESP_LOGI(TAG, "Starting firmware upgrade from %s", firmware_url.c_str());
+    
     esp_ota_handle_t update_handle = 0;
     auto update_partition = esp_ota_get_next_update_partition(NULL);
     if (update_partition == NULL) {
@@ -269,12 +272,22 @@ bool Ota::Upgrade(const std::string& firmware_url) {
         return false;
     }
 
-    ESP_LOGI(TAG, "Writing to partition %s at offset 0x%lx", update_partition->label, update_partition->address);
+    ESP_LOGI(TAG, "Writing to partition %s at offset 0x%" PRIx32 ", size: %" PRIu32 " bytes", 
+             update_partition->label, update_partition->address, update_partition->size);
+    
+    // Log system status before starting
+    ESP_LOGI(TAG, "Initial free heap: %" PRIu32 " bytes", esp_get_free_heap_size());
+    ESP_LOGI(TAG, "Initial min free heap: %" PRIu32 " bytes", esp_get_minimum_free_heap_size());
+
     bool image_header_checked = false;
     std::string image_header;
 
     auto network = Board::GetInstance().GetNetwork();
     auto http = network->CreateHttp(0);
+    
+    // Set longer timeout for large file downloads
+    http->SetTimeout(60000); // 60 second timeout
+    
     if (!http->Open("GET", firmware_url)) {
         ESP_LOGE(TAG, "Failed to open HTTP connection");
         return false;
@@ -291,33 +304,38 @@ bool Ota::Upgrade(const std::string& firmware_url) {
         return false;
     }
 
-    char buffer[512];
+    ESP_LOGI(TAG, "Firmware size: %u bytes", (unsigned int)content_length);
+    
+    // Check if firmware fits in partition
+    if (content_length > update_partition->size) {
+        ESP_LOGE(TAG, "Firmware size (%u) exceeds partition size (%" PRIu32 ")", 
+                 (unsigned int)content_length, update_partition->size);
+        return false;
+    }
+
+    char *buffer = (char*)malloc(OTA_BUFFER_SIZE);
+    if (!buffer) {
+        ESP_LOGE(TAG, "Failed to allocate OTA buffer");
+        return false;
+    }
+
     size_t total_read = 0, recent_read = 0;
     auto last_calc_time = esp_timer_get_time();
+    int write_count = 0;
+    bool ota_begun = false;
+
     while (true) {
-        int ret = http->Read(buffer, sizeof(buffer));
+        int ret = http->Read(buffer, OTA_BUFFER_SIZE);
         if (ret < 0) {
             ESP_LOGE(TAG, "Failed to read HTTP data: %s", esp_err_to_name(ret));
-            return false;
-        }
-
-        // Calculate speed and progress every second
-        recent_read += ret;
-        total_read += ret;
-        if (esp_timer_get_time() - last_calc_time >= 1000000 || ret == 0) {
-            size_t progress = total_read * 100 / content_length;
-            ESP_LOGI(TAG, "Progress: %u%% (%u/%u), Speed: %uB/s", progress, total_read, content_length, recent_read);
-            if (upgrade_callback_) {
-                upgrade_callback_(progress, recent_read);
-            }
-            last_calc_time = esp_timer_get_time();
-            recent_read = 0;
-        }
-
-        if (ret == 0) {
             break;
         }
 
+        if (ret == 0) {
+            ESP_LOGI(TAG, "Download completed, total bytes: %u", (unsigned int)total_read);
+            break;
+        }
+    
         if (!image_header_checked) {
             image_header.append(buffer, ret);
             if (image_header.size() >= sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) + sizeof(esp_app_desc_t)) {
@@ -327,29 +345,90 @@ bool Ota::Upgrade(const std::string& firmware_url) {
 
                 auto current_version = esp_app_get_description()->version;
                 if (memcmp(new_app_info.version, current_version, sizeof(new_app_info.version)) == 0) {
-                    ESP_LOGE(TAG, "Firmware version is the same, skipping upgrade");
-                    return false;
+                    ESP_LOGW(TAG, "Firmware version is the same as current, but continuing...");
                 }
 
-                if (esp_ota_begin(update_partition, OTA_WITH_SEQUENTIAL_WRITES, &update_handle)) {
-                    esp_ota_abort(update_handle);
-                    ESP_LOGE(TAG, "Failed to begin OTA");
-                    return false;
+                esp_err_t err = esp_ota_begin(update_partition, OTA_WITH_SEQUENTIAL_WRITES, &update_handle);
+                if (err != ESP_OK) {
+                    ESP_LOGE(TAG, "Failed to begin OTA: %s", esp_err_to_name(err));
+                    break;
                 }
-
+                ota_begun = true;
                 image_header_checked = true;
-                std::string().swap(image_header);
+                std::string().swap(image_header); // Clear image_header to free memory
             }
         }
-        auto err = esp_ota_write(update_handle, buffer, ret);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to write OTA data: %s", esp_err_to_name(err));
-            esp_ota_abort(update_handle);
-            return false;
+
+        // Write data to OTA partition
+        if (ota_begun) {
+            // Debug logging for critical 76% area
+            if (total_read >= 3000000 && total_read <= 3200000) {
+                ESP_LOGI(TAG, "CRITICAL: Writing at %u bytes (%.1f%%), free heap: %" PRIu32, 
+                         (unsigned int)total_read, (float)total_read * 100 / content_length, esp_get_free_heap_size());
+            }
+
+            esp_err_t err = esp_ota_write(update_handle, buffer, ret);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to write OTA data at offset %u: %s", 
+                         (unsigned int)total_read, esp_err_to_name(err));
+                ESP_LOGE(TAG, "Flash address: 0x%" PRIx32 ", free heap: %" PRIu32, 
+                         update_partition->address + total_read, esp_get_free_heap_size());
+                break;
+            }
+
+            // Yield to watchdog periodically
+            if (++write_count % OTA_WATCHDOG_YIELD_INTERVAL == 0) {
+                vTaskDelay(pdMS_TO_TICKS(1));
+                
+                // Flush every 128KB
+                if (total_read % (128 * 1024) == 0) {
+                    vTaskDelay(pdMS_TO_TICKS(10));
+                }
+            }
+        }
+
+        // Calculate speed and progress
+        recent_read += ret;
+        total_read += ret;
+        
+        if (esp_timer_get_time() - last_calc_time >= 1000000 || ret == 0) {
+            size_t progress = total_read * 100 / content_length;
+            
+            // Calculate actual time elapsed for more accurate speed
+            int64_t time_elapsed_us = esp_timer_get_time() - last_calc_time;
+            size_t speed_bps = (time_elapsed_us > 0) ? (recent_read * 1000000) / time_elapsed_us : 0;
+            
+            ESP_LOGI(TAG, "Progress: %u%% (%u/%u), Speed: %uB/s, Free heap: %u", 
+                    (unsigned int)progress, (unsigned int)total_read, (unsigned int)content_length, 
+                    (unsigned int)speed_bps, (unsigned int)esp_get_free_heap_size());
+                            
+            if (upgrade_callback_) {
+                upgrade_callback_(progress, speed_bps);
+            }
+            last_calc_time = esp_timer_get_time();
+            recent_read = 0;
         }
     }
+
+    free(buffer);
     http->Close();
 
+    // Check if download completed successfully
+    if (total_read != content_length) {
+        ESP_LOGE(TAG, "Incomplete download: received %u bytes, expected %u bytes", 
+                 (unsigned int)total_read, (unsigned int)content_length);
+        if (ota_begun) {
+            esp_ota_abort(update_handle);
+        }
+        return false;
+    }
+
+    if (!ota_begun) {
+        ESP_LOGE(TAG, "OTA was never begun");
+        return false;
+    }
+
+    ESP_LOGI(TAG, "Download completed, finalizing OTA...");
     esp_err_t err = esp_ota_end(update_handle);
     if (err != ESP_OK) {
         if (err == ESP_ERR_OTA_VALIDATE_FAILED) {
@@ -368,6 +447,24 @@ bool Ota::Upgrade(const std::string& firmware_url) {
 
     ESP_LOGI(TAG, "Firmware upgrade successful");
     return true;
+}
+
+bool Ota::Upgrade(const std::string& firmware_url) {
+    for (int retry = 0; retry < OTA_MAX_RETRIES; retry++) {
+        if (retry > 0) {
+            ESP_LOGI(TAG, "Retrying firmware upgrade, attempt %d/%d", retry + 1, OTA_MAX_RETRIES);
+            vTaskDelay(pdMS_TO_TICKS(3000)); // Wait 3 seconds between retries
+        }
+        
+        if (PerformUpgrade(firmware_url)) {
+            return true;
+        }
+        
+        ESP_LOGW(TAG, "Upgrade attempt %d failed", retry + 1);
+    }
+    
+    ESP_LOGE(TAG, "All upgrade attempts failed");
+    return false;
 }
 
 bool Ota::StartUpgrade(std::function<void(int progress, size_t speed)> callback) {

@@ -38,7 +38,7 @@ private:
     bool has_server_time_ = false;
     bool has_activation_code_ = false;
     bool has_serial_number_ = false;
-    bool has_activation_challenge_ = false;
+    bool has_activation_challenge_ = false; 
     std::string current_version_;
     std::string firmware_version_;
     std::string firmware_url_;
@@ -47,6 +47,7 @@ private:
     int activation_timeout_ms_ = 30000;
 
     bool Upgrade(const std::string& firmware_url);
+    bool PerformUpgrade(const std::string& firmware_url);
     std::function<void(int progress, size_t speed)> upgrade_callback_;
     std::vector<int> ParseVersion(const std::string& version);
     bool IsNewVersionAvailable(const std::string& currentVersion, const std::string& newVersion);
