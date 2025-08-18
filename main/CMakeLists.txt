@@ -339,7 +339,7 @@ set(SPIFFS_DIR "${CMAKE_BINARY_DIR}/emoji")
 file(MAKE_DIRECTORY ${SPIFFS_DIR})
 set(FILES_TO_DOWNLOAD "")
 list(APPEND FILES_TO_DOWNLOAD "heart.aaf" "bell.aaf" "star.aaf" "Blinking.aaf" "snowman.aaf"
-    "cookie.aaf" "Whole_elf.aaf" "sleep.aaf" "deer.aaf")
+    "cookie.aaf" "Whole_elf.aaf" "sleep.aaf" "cross.aaf" "happy.aaf" "cross2.aaf" "happy2.aaf")
 file(COPY "${CMAKE_SOURCE_DIR}/emoji/heart.aaf" DESTINATION "${SPIFFS_DIR}")
 file(COPY "${CMAKE_SOURCE_DIR}/emoji/bell.aaf" DESTINATION "${SPIFFS_DIR}")
 file(COPY "${CMAKE_SOURCE_DIR}/emoji/star.aaf" DESTINATION "${SPIFFS_DIR}")
@@ -348,11 +348,10 @@ file(COPY "${CMAKE_SOURCE_DIR}/emoji/snowman.aaf" DESTINATION "${SPIFFS_DIR}")
 file(COPY "${CMAKE_SOURCE_DIR}/emoji/cookie.aaf" DESTINATION "${SPIFFS_DIR}")
 file(COPY "${CMAKE_SOURCE_DIR}/emoji/Whole_elf.aaf" DESTINATION "${SPIFFS_DIR}")
 file(COPY "${CMAKE_SOURCE_DIR}/emoji/sleep.aaf" DESTINATION "${SPIFFS_DIR}")
-file(COPY "${CMAKE_SOURCE_DIR}/emoji/deer.aaf" DESTINATION "${SPIFFS_DIR}")
 file(COPY "${CMAKE_SOURCE_DIR}/emoji/cross.aaf" DESTINATION "${SPIFFS_DIR}")
 file(COPY "${CMAKE_SOURCE_DIR}/emoji/happy.aaf" DESTINATION "${SPIFFS_DIR}")
-
-
+file(COPY "${CMAKE_SOURCE_DIR}/emoji/cross2.aaf" DESTINATION "${SPIFFS_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/emoji/happy2.aaf" DESTINATION "${SPIFFS_DIR}")
 
 spiffs_create_partition_assets(
     assets_A
