@@ -123,8 +123,10 @@ void EmojiWidget::SetEmotion(const char* emotion)
          {"snowman",    {MMAP_EMOJI_SNOWMAN_AAF,   true, 22}},
          {"star",       {MMAP_EMOJI_STAR_AAF,      true, 25}},
          {"elf",        {MMAP_EMOJI_WHOLE_ELF_AAF, true, 25}},
-         {"wrong",      {MMAP_EMOJI_CROSS_AAF,     true, 24}},
-         {"happy",      {MMAP_EMOJI_HAPPY_AAF,     true, 24}}
+         {"cross",      {MMAP_EMOJI_CROSS_AAF,     true, 24}},
+         {"cross2",     {MMAP_EMOJI_CROSS_AAF,     true, 24}},
+         {"happy",      {MMAP_EMOJI_HAPPY_AAF,     true, 24}},
+         {"happy2",     {MMAP_EMOJI_HAPPY_AAF,     true, 24}}
     };
 
     auto it = emotion_map.find(emotion);
@@ -135,7 +137,7 @@ void EmojiWidget::SetEmotion(const char* emotion)
         player_->StartPlayer(MMAP_EMOJI_BLINKING_AAF, true, 20);
     } else {
         ESP_LOGW(TAG, "Unknown emotion: %s", emotion);
-        player_->StartPlayer(MMAP_EMOJI_CROSS_AAF, true, 20); // Default to blinking if unknown
+        player_->StartPlayer(MMAP_EMOJI_CROSS_AAF, true, 20);
     }
 }
 

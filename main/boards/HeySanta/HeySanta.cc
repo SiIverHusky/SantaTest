@@ -37,6 +37,9 @@ float m2_coefficient = 1.0;
 static httpd_handle_t control_server = NULL;
 static bool web_server_active = false;
 
+// Global stop flag for scenes
+static bool scene_stop_requested = false;
+
 class HeySantaCodec : public SantaAudioCodec {
 public:
     HeySantaCodec(i2c_master_bus_handle_t i2c_bus, int input_sample_rate, int output_sample_rate,
@@ -117,6 +120,13 @@ private:
         }
     }
 
+    // Function to stop all motors immediately
+    static void stop_all_motors() {
+        ESP_LOGI(TAG, "Stopping all motors");
+        set_motor_A_speed(0);
+        set_motor_B_speed(0);
+    }
+
     uint32_t unbiasedRandom3() {
         uint32_t r;
         const uint32_t upper_bound = 0xFFFFFFFF - (0xFFFFFFFF % 3);
@@ -136,6 +146,247 @@ private:
         return min + (r % range);
     }
 
+    // Modified shake body method with stop check
+    void ShakeBody() {
+        ESP_LOGI(TAG, "Body shake start - 9 seconds");
+        set_motor_A_speed(100);
+        
+        // Check for stop every 100ms during the 9 second shake
+        for (int i = 0; i < 90; i++) {
+            if (scene_stop_requested) {
+                ESP_LOGI(TAG, "Scene stop requested during body shake");
+                stop_all_motors();
+                scene_stop_requested = false; // Reset flag
+                return;
+            }
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+        }
+        
+        set_motor_A_speed(0);  // Stop motor
+    }
+
+    // Modified special shake for scene 33b7 with stop check
+    void ShakeHipsSpecial() {
+        ESP_LOGI(TAG, "Hip shake - low speed 5s + high speed 5s");
+        
+        // Low speed 5 seconds
+        set_motor_B_speed(50);
+        for (int i = 0; i < 50; i++) {
+            if (scene_stop_requested) {
+                ESP_LOGI(TAG, "Scene stop requested during hip shake (low speed)");
+                stop_all_motors();
+                scene_stop_requested = false;
+                return;
+            }
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+        }
+        
+        // High speed 5 seconds  
+        set_motor_B_speed(100);
+        for (int i = 0; i < 50; i++) {
+            if (scene_stop_requested) {
+                ESP_LOGI(TAG, "Scene stop requested during hip shake (high speed)");
+                stop_all_motors();
+                scene_stop_requested = false;
+                return;
+            }
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+        }
+        
+        set_motor_B_speed(0);  // Stop motor
+    }
+
+    // Scene methods
+    void ExecuteScene7c2() {
+        scene_stop_requested = false; // Reset stop flag
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("heart");
+        ShakeBody();
+    }
+
+    void ExecuteScene9c5() {
+        scene_stop_requested = false; // Reset stop flag
+        auto display = Board::GetInstance().GetDisplay();
+        // Loop between normal and happy during shake
+        display->SetEmotion("neutral");
+        for (int i = 0; i < 3; i++) {
+            if (scene_stop_requested) {
+                ESP_LOGI(TAG, "Scene stop requested during 9c5");
+                stop_all_motors();
+                scene_stop_requested = false;
+                return;
+            }
+            
+            set_motor_A_speed(100);
+            for (int j = 0; j < 15; j++) {
+                if (scene_stop_requested) {
+                    stop_all_motors();
+                    scene_stop_requested = false;
+                    return;
+                }
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+            }
+            
+            display->SetEmotion("happy");
+            for (int j = 0; j < 15; j++) {
+                if (scene_stop_requested) {
+                    stop_all_motors();
+                    scene_stop_requested = false;
+                    return;
+                }
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+            }
+            
+            display->SetEmotion("neutral");
+            for (int j = 0; j < 15; j++) {
+                if (scene_stop_requested) {
+                    stop_all_motors();
+                    scene_stop_requested = false;
+                    return;
+                }
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+            }
+        }
+        set_motor_A_speed(0);
+    }
+
+    void ExecuteScene10g1() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("bell");
+        ShakeBody();
+    }
+
+    void ExecuteScene11g2() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("happy");
+        ShakeBody();
+    }
+
+    void ExecuteScene12g3_1() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("happy2");
+        ShakeBody();
+    }
+
+    void ExecuteScene12g3_2() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("happy");
+        ShakeBody();
+    }
+
+    void ExecuteScene14h1() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("neutral");
+        ShakeBody();
+    }
+
+    void ExecuteScene21e3() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("star");
+        ShakeBody();
+    }
+
+    void ExecuteScene23e2() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("cookie");
+        ShakeBody();
+    }
+
+    void ExecuteScene25d1() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("neutral");
+        // No body shake
+    }
+
+    void ExecuteScene26d2() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("star");
+        ShakeBody();
+    }
+
+    void ExecuteScene27d3() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("happy");
+        // No body shake
+    }
+
+    void ExecuteScene28b8() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("star");
+        ShakeBody();
+    }
+
+    void ExecuteScene30b6() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("snowman");
+        ShakeBody();
+    }
+
+    void ExecuteScene33b7() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("happy");
+        ShakeHipsSpecial();
+    }
+
+    void ExecuteScene35b5() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("happy");
+        // No shake
+    }
+
+    void ExecuteScene36f5() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("neutral");
+        
+        // 2 second delay with stop check
+        for (int i = 0; i < 20; i++) {
+            if (scene_stop_requested) {
+                ESP_LOGI(TAG, "Scene stop requested during 36f5 delay");
+                scene_stop_requested = false;
+                return;
+            }
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+        }
+        
+        ShakeBody();
+    }
+
+    void ExecuteScene37f4() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("elf");
+        ShakeBody();
+    }
+
+    void ExecuteScene38f1() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("sleep");
+        // No shake
+    }
+
+    void ExecuteScene40() {
+        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("happy");
+        ShakeBody();
+    }
+
     // Web server handlers
     static esp_err_t control_page_handler(httpd_req_t *req) {
         httpd_resp_set_type(req, "text/html; charset=utf-8");
@@ -145,52 +396,77 @@ private:
         "<html>"
         "<head>"
         "<meta charset='UTF-8'>"
-        "<title>🎅 Santa Control Panel</title>"
+        "<title>🎅 Santa Scene Control</title>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
         "<style>"
         "body { font-family: Arial, sans-serif; text-align: center; margin: 0; padding: 20px; background: linear-gradient(135deg, #2E7D32 0%, #C62828 50%, #2E7D32 100%); color: white; min-height: 100vh; }"
-        ".container { max-width: 900px; margin: 0 auto; background: rgba(255,255,255,0.15); padding: 40px; border-radius: 25px; backdrop-filter: blur(15px); box-shadow: 0 10px 40px rgba(0,0,0,0.3); }"
+        ".container { max-width: 1200px; margin: 0 auto; background: rgba(255,255,255,0.15); padding: 40px; border-radius: 25px; backdrop-filter: blur(15px); box-shadow: 0 10px 40px rgba(0,0,0,0.3); }"
         "h1 { color: #fff; margin-bottom: 30px; font-size: 32px; }"
         "h2 { color: #fff; margin: 30px 0 20px 0; font-size: 24px; }"
-        "button { padding: 15px 25px; margin: 8px; font-size: 16px; border: none; border-radius: 12px; cursor: pointer; min-width: 140px; transition: all 0.3s ease; font-weight: bold; }"
-        ".movement-btn { background: linear-gradient(45deg, #4CAF50, #45a049); color: white; box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4); }"
+        "button { padding: 12px 20px; margin: 6px; font-size: 14px; border: none; border-radius: 8px; cursor: pointer; min-width: 120px; transition: all 0.3s ease; font-weight: bold; }"
+        ".scene-btn { background: linear-gradient(45deg, #FF9800, #F57C00); color: white; box-shadow: 0 4px 15px rgba(255, 152, 0, 0.4); }"
         ".emotion-btn { background: linear-gradient(45deg, #E91E63, #C2185B); color: white; box-shadow: 0 4px 15px rgba(233, 30, 99, 0.4); }"
+        ".emergency-btn { background: linear-gradient(45deg, #FF5722, #D84315); color: white; box-shadow: 0 6px 20px rgba(255, 87, 34, 0.5); font-size: 18px; min-width: 200px; }"
         ".stop-btn { background: linear-gradient(45deg, #F44336, #D32F2F); color: white; box-shadow: 0 6px 20px rgba(244, 67, 54, 0.4); }"
         "button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.4); }"
         ".control-section { margin: 30px 0; padding: 25px; background: rgba(255,255,255,0.1); border-radius: 20px; }"
-        ".button-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 20px 0; }"
-        ".emotion-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 20px 0; }"
+        ".scene-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 20px 0; }"
+        ".emotion-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 20px 0; }"
+        ".emergency-section { margin: 20px 0; padding: 20px; background: rgba(255,87,34,0.2); border-radius: 15px; border: 2px solid rgba(255,87,34,0.5); }"
         ".status { margin: 25px 0; padding: 20px; background: rgba(255,255,255,0.1); border-radius: 15px; font-weight: bold; font-size: 18px; }"
         "</style>"
         "</head>"
         "<body>"
         "<div class='container'>"
-        "<h1>🎅 Santa Control Panel 🎅</h1>"
+        "<h1>🎅 Santa Scene Control 🎬</h1>"
+        
+        "<div class='emergency-section'>"
+        "<h2>🚨 Emergency Controls</h2>"
+        "<button class='emergency-btn' onclick='stopScene()'>⏹️ STOP SCENE</button>"
+        "</div>"
         
         "<div class='control-section'>"
-        "<h2>🕺 Movement Controls</h2>"
-        "<div class='button-grid'>"
-        "<button class='movement-btn' onclick='sendCommand(\"/dance\")'>💃 DANCE</button>"
-        "<button class='movement-btn' onclick='sendCommand(\"/shake-head\")'>🤖 SHAKE HEAD</button>"
-        "<button class='movement-btn' onclick='sendCommand(\"/shake-hip\")'>🍑 SHAKE HIP</button>"
+        "<h2>🎬 Scene Controls</h2>"
+        "<div class='scene-grid'>"
+        "<button class='scene-btn' onclick='executeScene(\"7c2\")'>7c2</button>"
+        "<button class='scene-btn' onclick='executeScene(\"9c5\")'>9c5</button>"
+        "<button class='scene-btn' onclick='executeScene(\"10g1\")'>10g1</button>"
+        "<button class='scene-btn' onclick='executeScene(\"11g2\")'>11g2</button>"
+        "<button class='scene-btn' onclick='executeScene(\"12g3-1\")'>12g3.1</button>"
+        "<button class='scene-btn' onclick='executeScene(\"12g3-2\")'>12g3.2</button>"
+        "<button class='scene-btn' onclick='executeScene(\"14h1\")'>14h1</button>"
+        "<button class='scene-btn' onclick='executeScene(\"21e3\")'>21e3</button>"
+        "<button class='scene-btn' onclick='executeScene(\"23e2\")'>23e2</button>"
+        "<button class='scene-btn' onclick='executeScene(\"25d1\")'>25d1</button>"
+        "<button class='scene-btn' onclick='executeScene(\"26d2\")'>26d2</button>"
+        "<button class='scene-btn' onclick='executeScene(\"27d3\")'>27d3</button>"
+        "<button class='scene-btn' onclick='executeScene(\"28b8\")'>28b8</button>"
+        "<button class='scene-btn' onclick='executeScene(\"30b6\")'>30b6</button>"
+        "<button class='scene-btn' onclick='executeScene(\"33b7\")'>33b7</button>"
+        "<button class='scene-btn' onclick='executeScene(\"35b5\")'>35b5</button>"
+        "<button class='scene-btn' onclick='executeScene(\"36f5\")'>36f5</button>"
+        "<button class='scene-btn' onclick='executeScene(\"37f4\")'>37f4</button>"
+        "<button class='scene-btn' onclick='executeScene(\"38f1\")'>38f1</button>"
+        "<button class='scene-btn' onclick='executeScene(\"40\")'>40</button>"
         "</div>"
         "</div>"
         
         "<div class='control-section'>"
-        "<h2>😊 Emotion Controls</h2>"
+        "<h2>😊 Quick Emotion Controls</h2>"
         "<div class='emotion-grid'>"
-        "<button class='emotion-btn' onclick='sendCommand(\"/emotion?type=bell\")'>🔔 Bell</button>"
-        "<button class='emotion-btn' onclick='sendCommand(\"/emotion?type=blinking\")'>😊 Blinking</button>"
-        "<button class='emotion-btn' onclick='sendCommand(\"/emotion?type=cookie\")'>🍪 Cookie</button>"
-        "<button class='emotion-btn' onclick='sendCommand(\"/emotion?type=deer\")'>🦌 Deer</button>"
-        "<button class='emotion-btn' onclick='sendCommand(\"/emotion?type=heart\")'>❤️ Heart</button>"
-        "<button class='emotion-btn' onclick='sendCommand(\"/emotion?type=sleep\")'>😴 Sleep</button>"
-        "<button class='emotion-btn' onclick='sendCommand(\"/emotion?type=snowman\")'>⛄ Snowman</button>"
-        "<button class='emotion-btn' onclick='sendCommand(\"/emotion?type=star\")'>⭐ Star</button>"
-        "<button class='emotion-btn' onclick='sendCommand(\"/emotion?type=elf\")'>🧝 Elf</button>"
-        "<button class='emotion-btn' onclick='sendCommand(\"/emotion?type=wrong\")'>❌ Wrong</button>"
-        "<button class='emotion-btn' onclick='sendCommand(\"/emotion?type=happy\")'>😄 Happy</button>"
-        "<button class='emotion-btn' onclick='sendCommand(\"/emotion?type=neutral\")'>😐 Neutral</button>"
+        "<button class='emotion-btn' onclick='setEmotion(\"bell\")'>🔔 Bell</button>"
+        "<button class='emotion-btn' onclick='setEmotion(\"blinking\")'>😊 Blinking</button>"
+        "<button class='emotion-btn' onclick='setEmotion(\"cookie\")'>🍪 Cookie</button>"
+        "<button class='emotion-btn' onclick='setEmotion(\"heart\")'>❤️ Heart</button>"
+        "<button class='emotion-btn' onclick='setEmotion(\"sleep\")'>😴 Sleep</button>"
+        "<button class='emotion-btn' onclick='setEmotion(\"snowman\")'>⛄ Snowman</button>"
+        "<button class='emotion-btn' onclick='setEmotion(\"star\")'>⭐ Star</button>"
+        "<button class='emotion-btn' onclick='setEmotion(\"elf\")'>🧝 Elf</button>"
+        "<button class='emotion-btn' onclick='setEmotion(\"cross\")'>❌ Cross</button>"
+        "<button class='emotion-btn' onclick='setEmotion(\"cross2\")'>❌ Cross2</button>"
+        "<button class='emotion-btn' onclick='setEmotion(\"happy\")'>😄 Happy</button>"
+        "<button class='emotion-btn' onclick='setEmotion(\"happy2\")'>😁 Happy2</button>"
+        "<button class='emotion-btn' onclick='setEmotion(\"neutral\")'>😐 Neutral</button>"
         "</div>"
         "</div>"
         
@@ -198,15 +474,47 @@ private:
         "<button class='stop-btn' onclick='stopServer()'>🛑 CLOSE CONTROL PANEL</button>"
         "</div>"
         
-        "<div id='status' class='status'>🎅 Santa Control Panel Ready!</div>"
+        "<div id='status' class='status'>🎬 Santa Scene Control Ready!</div>"
         "</div>"
         
         "<script>"
-        "function sendCommand(endpoint) {"
-        "  console.log('Sending command:', endpoint);"
-        "  document.getElementById('status').innerText = 'Sending command...';"
+        "function executeScene(sceneId) {"
+        "  console.log('Executing scene:', sceneId);"
+        "  document.getElementById('status').innerText = 'Executing scene ' + sceneId + '...';"
         "  "
-        "  fetch(endpoint)"
+        "  fetch('/scene?id=' + sceneId)"
+        "    .then(response => response.text())"
+        "    .then(data => {"
+        "      console.log('Response:', data);"
+        "      document.getElementById('status').innerText = data;"
+        "    })"
+        "    .catch(error => {"
+        "      console.error('Error:', error);"
+        "      document.getElementById('status').innerText = 'Error: ' + error;"
+        "    });"
+        "}"
+        
+        "function setEmotion(emotionType) {"
+        "  console.log('Setting emotion:', emotionType);"
+        "  document.getElementById('status').innerText = 'Setting emotion to ' + emotionType + '...';"
+        "  "
+        "  fetch('/emotion?type=' + emotionType)"
+        "    .then(response => response.text())"
+        "    .then(data => {"
+        "      console.log('Response:', data);"
+        "      document.getElementById('status').innerText = data;"
+        "    })"
+        "    .catch(error => {"
+        "      console.error('Error:', error);"
+        "      document.getElementById('status').innerText = 'Error: ' + error;"
+        "    });"
+        "}"
+        
+        "function stopScene() {"
+        "  console.log('Stopping scene');"
+        "  document.getElementById('status').innerText = 'STOPPING SCENE...';"
+        "  "
+        "  fetch('/scene-stop')"
         "    .then(response => response.text())"
         "    .then(data => {"
         "      console.log('Response:', data);"
@@ -234,24 +542,114 @@ private:
         return ESP_OK;
     }
 
-    static esp_err_t dance_handler(httpd_req_t *req) {
+    // Single scene handler for ALL scenes using query parameters
+    static esp_err_t scene_handler(httpd_req_t *req) {
         auto& board = static_cast<HeySantaBoard&>(Board::GetInstance());
-        board.dance();
-        httpd_resp_send(req, "🕺 Santa is dancing!", -1);
+        
+        char query[100];
+        char scene_id[50];
+        
+        if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+            if (httpd_query_key_value(query, "id", scene_id, sizeof(scene_id)) == ESP_OK) {
+                ESP_LOGI(TAG, "Executing scene: %s", scene_id);
+                
+                if (strcmp(scene_id, "7c2") == 0) {
+                    board.ExecuteScene7c2();
+                    httpd_resp_send(req, "🎬 Scene 7c2 executed!", -1);
+                }
+                else if (strcmp(scene_id, "9c5") == 0) {
+                    board.ExecuteScene9c5();
+                    httpd_resp_send(req, "🎬 Scene 9c5 executed!", -1);
+                }
+                else if (strcmp(scene_id, "10g1") == 0) {
+                    board.ExecuteScene10g1();
+                    httpd_resp_send(req, "🎬 Scene 10g1 executed!", -1);
+                }
+                else if (strcmp(scene_id, "11g2") == 0) {
+                    board.ExecuteScene11g2();
+                    httpd_resp_send(req, "🎬 Scene 11g2 executed!", -1);
+                }
+                else if (strcmp(scene_id, "12g3-1") == 0) {
+                    board.ExecuteScene12g3_1();
+                    httpd_resp_send(req, "🎬 Scene 12g3.1 executed!", -1);
+                }
+                else if (strcmp(scene_id, "12g3-2") == 0) {
+                    board.ExecuteScene12g3_2();
+                    httpd_resp_send(req, "🎬 Scene 12g3.2 executed!", -1);
+                }
+                else if (strcmp(scene_id, "14h1") == 0) {
+                    board.ExecuteScene14h1();
+                    httpd_resp_send(req, "🎬 Scene 14h1 executed!", -1);
+                }
+                else if (strcmp(scene_id, "21e3") == 0) {
+                    board.ExecuteScene21e3();
+                    httpd_resp_send(req, "🎬 Scene 21e3 executed!", -1);
+                }
+                else if (strcmp(scene_id, "23e2") == 0) {
+                    board.ExecuteScene23e2();
+                    httpd_resp_send(req, "🎬 Scene 23e2 executed!", -1);
+                }
+                else if (strcmp(scene_id, "25d1") == 0) {
+                    board.ExecuteScene25d1();
+                    httpd_resp_send(req, "🎬 Scene 25d1 executed!", -1);
+                }
+                else if (strcmp(scene_id, "26d2") == 0) {
+                    board.ExecuteScene26d2();
+                    httpd_resp_send(req, "🎬 Scene 26d2 executed!", -1);
+                }
+                else if (strcmp(scene_id, "27d3") == 0) {
+                    board.ExecuteScene27d3();
+                    httpd_resp_send(req, "🎬 Scene 27d3 executed!", -1);
+                }
+                else if (strcmp(scene_id, "28b8") == 0) {
+                    board.ExecuteScene28b8();
+                    httpd_resp_send(req, "🎬 Scene 28b8 executed!", -1);
+                }
+                else if (strcmp(scene_id, "30b6") == 0) {
+                    board.ExecuteScene30b6();
+                    httpd_resp_send(req, "🎬 Scene 30b6 executed!", -1);
+                }
+                else if (strcmp(scene_id, "33b7") == 0) {
+                    board.ExecuteScene33b7();
+                    httpd_resp_send(req, "🎬 Scene 33b7 executed!", -1);
+                }
+                else if (strcmp(scene_id, "35b5") == 0) {
+                    board.ExecuteScene35b5();
+                    httpd_resp_send(req, "🎬 Scene 35b5 executed!", -1);
+                }
+                else if (strcmp(scene_id, "36f5") == 0) {
+                    board.ExecuteScene36f5();
+                    httpd_resp_send(req, "🎬 Scene 36f5 executed!", -1);
+                }
+                else if (strcmp(scene_id, "37f4") == 0) {
+                    board.ExecuteScene37f4();
+                    httpd_resp_send(req, "🎬 Scene 37f4 executed!", -1);
+                }
+                else if (strcmp(scene_id, "38f1") == 0) {
+                    board.ExecuteScene38f1();
+                    httpd_resp_send(req, "🎬 Scene 38f1 executed!", -1);
+                }
+                else if (strcmp(scene_id, "40") == 0) {
+                    board.ExecuteScene40();
+                    httpd_resp_send(req, "🎬 Scene 40 executed!", -1);
+                }
+                else {
+                    httpd_resp_send(req, "❌ Unknown scene ID", -1);
+                }
+                return ESP_OK;
+            }
+        }
+        
+        httpd_resp_send(req, "❌ Missing scene ID parameter", -1);
         return ESP_OK;
     }
 
-    static esp_err_t shake_head_handler(httpd_req_t *req) {
-        auto& board = static_cast<HeySantaBoard&>(Board::GetInstance());
-        board.HeadShakeOnly();
-        httpd_resp_send(req, "🤖 Santa is shaking his head!", -1);
-        return ESP_OK;
-    }
-
-    static esp_err_t shake_hip_handler(httpd_req_t *req) {
-        auto& board = static_cast<HeySantaBoard&>(Board::GetInstance());
-        board.HipShakeOnly();
-        httpd_resp_send(req, "🍑 Santa is shaking his hips!", -1);
+    // Scene stop handler
+    static esp_err_t scene_stop_handler(httpd_req_t *req) {
+        ESP_LOGI(TAG, "Scene stop requested!");
+        scene_stop_requested = true;
+        stop_all_motors(); // Immediately stop motors
+        httpd_resp_send(req, "⏹️ Scene stopped!", -1);
         return ESP_OK;
     }
 
@@ -339,24 +737,25 @@ public:
         httpd_config_t config = HTTPD_DEFAULT_CONFIG();
         config.server_port = 8080;
         config.stack_size = 8192;
+        config.max_uri_handlers = 8;  // Only need 5 handlers now!
         
         if (httpd_start(&control_server, &config) == ESP_OK) {
-            // Register handlers
             httpd_uri_t handlers[] = {
                 {"/", HTTP_GET, control_page_handler, NULL},
-                {"/dance", HTTP_GET, dance_handler, NULL},
-                {"/shake-head", HTTP_GET, shake_head_handler, NULL},
-                {"/shake-hip", HTTP_GET, shake_hip_handler, NULL},
+                {"/scene", HTTP_GET, scene_handler, NULL},        // Single handler for ALL scenes
+                {"/scene-stop", HTTP_GET, scene_stop_handler, NULL},
                 {"/emotion", HTTP_GET, emotion_handler, NULL},
                 {"/stop", HTTP_GET, stop_handler, NULL}
             };
             
             for (auto& handler : handlers) {
-                httpd_register_uri_handler(control_server, &handler);
+                if (httpd_register_uri_handler(control_server, &handler) != ESP_OK) {
+                    ESP_LOGE(TAG, "Failed to register handler for %s", handler.uri);
+                }
             }
             
             web_server_active = true;
-            ESP_LOGI(TAG, "🎅 Santa control web server started!");
+            ESP_LOGI(TAG, "🎬 Santa scene control web server started!");
         }
     }
 
@@ -389,7 +788,6 @@ public:
             ESP_LOGI(TAG, "🎅 Santa Control Panel: http://" IPSTR ":8080", IP2STR(&ip_info.ip));
         });
 
-        // MODIFIED: Use wake button for web server control
         wake_button_.OnClick([this]() {
             ESP_LOGI(TAG, "Wake button pressed!");
             
