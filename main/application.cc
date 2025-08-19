@@ -383,8 +383,16 @@ void Application::Start() {
         xEventGroupSetBits(event_group_, MAIN_EVENT_ERROR);
     });
     protocol_->OnIncomingAudio([this](std::unique_ptr<AudioStreamPacket> packet) {
+        // Auto-promote to speaking if audio arrives unexpectedly
+        if (device_state_ != kDeviceStateSpeaking && !web_control_panel_active_) {
+            ESP_LOGW(TAG, "Incoming audio while state=%s; auto-promoting to speaking",
+                     STATE_STRINGS[device_state_]);
+            SetDeviceState(kDeviceStateSpeaking);
+        }
         if (device_state_ == kDeviceStateSpeaking || web_control_panel_active_) {
             audio_service_.PushPacketToDecodeQueue(std::move(packet));
+        } else {
+            ESP_LOGW(TAG, "Dropping audio packet (state=%s)", STATE_STRINGS[device_state_]);
         }
     });
     protocol_->OnAudioChannelOpened([this, codec, &board]() {
