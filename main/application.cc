@@ -878,6 +878,19 @@ void Application::SendMcpMessage(const std::string& payload) {
     });
 }
 
+void Application::SendSystemCommand(const std::string& command) {
+    Schedule([this, command]() {
+        if (protocol_) {
+            // Send system command wrapped in MCP format
+            std::string mcp_payload = "{\"type\":\"system\",\"command\":\"" + command + "\"}";
+            ESP_LOGI(TAG, "Sending system command via MCP: %s", mcp_payload.c_str());
+            protocol_->SendMcpMessage(mcp_payload);
+        } else {
+            ESP_LOGW(TAG, "Protocol not available to send system command: %s", command.c_str());
+        }
+    });
+}
+
 void Application::SetAecMode(AecMode mode) {
     aec_mode_ = mode;
     Schedule([this]() {
