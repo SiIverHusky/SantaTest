@@ -631,7 +631,7 @@ private:
             // Auto-stop conditions:
             // 1. Device goes to idle (conversation ended)
             // 2. Timeout after 60 seconds
-            if (app.GetDeviceState() == kDeviceStateIdle || i >= 30) {
+            if (app.GetDeviceState() == kDeviceStateIdle || i >= 150) {
                 ESP_LOGI(TAG, "Auto-stopping shake: state=%d, cycles=%d", 
                         app.GetDeviceState(), i);
                 break;
