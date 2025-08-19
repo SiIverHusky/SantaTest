@@ -68,6 +68,9 @@ private:
     Button wake_button_;
     anim::EmojiWidget* display_ = nullptr;
     Esp32Camera* camera_;
+
+    volatile bool head_shake_active = false;
+
     
     void Initialize_Motor(void)
     {
@@ -564,7 +567,9 @@ private:
         return min + (r % range);
     }
     void dance()
+    
     {
+        head_shake_active = false;
         for (int i = 1 ; i <= 3; i++) // dance for 3 times
         {
             uint32_t head_mode = unbiasedRandom3(); // Randomly choose head mode 
@@ -602,19 +607,66 @@ private:
         ESP_LOGI(TAG, "Head shake complete!");
     }
 
-    void HeadShake_start() {
-        ESP_LOGI(TAG, "start ");
-        for (int i = 0; i < 2; i++) {
-            SetHeadSpeed(100);   // Full speed forward
-            vTaskDelay(80 / portTICK_PERIOD_MS);
+    // void HeadShake_start() {
+    //     ESP_LOGI(TAG, "start ");
+    //     for (int i = 0; i < 2; i++) {
+    //         SetHeadSpeed(100);   // Full speed forward
+    //         vTaskDelay(80 / portTICK_PERIOD_MS);
             
-            SetHeadSpeed(-100);  // Full speed backward
-            vTaskDelay(80 / portTICK_PERIOD_MS);
+    //         SetHeadSpeed(-100);  // Full speed backward
+    //         vTaskDelay(80 / portTICK_PERIOD_MS);
+    //     }
+    // }
+    
+        
+    void HeadShake_start() {
+        ESP_LOGI(TAG, "Head shake starting - will shake until stopped");
+        head_shake_active = true;
+        
+        auto& app = Application::GetInstance();
+        
+        // Shake indefinitely until manually stopped or state changes
+        for (int i = 0; head_shake_active; i++) {
+            ESP_LOGI(TAG, "Head shake cycle %d", i + 1);
+            
+            // Check if we should stop based on device state
+            if (app.GetDeviceState() == kDeviceStateSpeaking) {
+                ESP_LOGI(TAG, "Device is speaking, continuing head shake");
+            } else if (app.GetDeviceState() != kDeviceStateListening && 
+                    !app.IsWebControlPanelActive()) {
+                ESP_LOGI(TAG, "Device not in listening mode, stopping head shake");
+                break;
+            }
+            
+            // ON phase - 1 second
+            SetHeadSpeed(100);
+            for (int j = 0; j < 10 && head_shake_active; j++) {
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+            }
+            
+            if (!head_shake_active) break;
+            
+            // OFF phase - 1 second  
+            SetHeadSpeed(0);
+            for (int j = 0; j < 10 && head_shake_active; j++) {
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+            }
+            
+            // Stop after reasonable time if no manual stop
+            if (i >= 30) { // Maximum 60 seconds
+                ESP_LOGI(TAG, "Head shake timeout after 30 cycles");
+                break;
+            }
         }
+        
+        SetHeadSpeed(0);
+        head_shake_active = false;
+        ESP_LOGI(TAG, "Head shake completed");
     }
 
     void HeadShake_stop() {
         ESP_LOGI(TAG, "stop Head shake (on/off mode)!");
+        head_shake_active = false;
         for (int i = 0; i < 1; i++) {
             SetHeadSpeed(100);   // Full speed forward
             vTaskDelay(80 / portTICK_PERIOD_MS);
@@ -626,14 +678,15 @@ private:
     }
 
     void HipShakeOnly() {
+        head_shake_active = false;
         ESP_LOGI(TAG, "Hip shake (on/off mode)!");
         SetHeadSpeed(0);
         for (int i = 0; i < 12; i++) {
-            SetHipSpeed(100);    // Forward
+            SetHipSpeed(72);    // Forward
             vTaskDelay(150 / portTICK_PERIOD_MS);
             SetHipSpeed(0);      // Stop - adds gentleness
             vTaskDelay(50 / portTICK_PERIOD_MS);
-            SetHipSpeed(-100);   // Backward
+            SetHipSpeed(-72);   // Backward
             vTaskDelay(150 / portTICK_PERIOD_MS);
             SetHipSpeed(0);      // Stop - adds gentleness
             vTaskDelay(50 / portTICK_PERIOD_MS);
