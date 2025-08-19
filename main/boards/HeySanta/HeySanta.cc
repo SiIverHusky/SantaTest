@@ -620,21 +620,20 @@ private:
     
         
     void HeadShake_start() {
-        ESP_LOGI(TAG, "Head shake starting - will shake until stopped");
+        ESP_LOGI(TAG, "Head shake starting - will shake until manually stopped or timeout");
         head_shake_active = true;
         
         auto& app = Application::GetInstance();
         
-        // Shake indefinitely until manually stopped or state changes
         for (int i = 0; head_shake_active; i++) {
             ESP_LOGI(TAG, "Head shake cycle %d", i + 1);
             
-            // Check if we should stop based on device state
-            if (app.GetDeviceState() == kDeviceStateSpeaking) {
-                ESP_LOGI(TAG, "Device is speaking, continuing head shake");
-            } else if (app.GetDeviceState() != kDeviceStateListening && 
-                    !app.IsWebControlPanelActive()) {
-                ESP_LOGI(TAG, "Device not in listening mode, stopping head shake");
+            // Auto-stop conditions:
+            // 1. Device goes to idle (conversation ended)
+            // 2. Timeout after 60 seconds
+            if (app.GetDeviceState() == kDeviceStateIdle || i >= 30) {
+                ESP_LOGI(TAG, "Auto-stopping shake: state=%d, cycles=%d", 
+                        app.GetDeviceState(), i);
                 break;
             }
             
@@ -650,12 +649,6 @@ private:
             SetHeadSpeed(0);
             for (int j = 0; j < 10 && head_shake_active; j++) {
                 vTaskDelay(100 / portTICK_PERIOD_MS);
-            }
-            
-            // Stop after reasonable time if no manual stop
-            if (i >= 30) { // Maximum 60 seconds
-                ESP_LOGI(TAG, "Head shake timeout after 30 cycles");
-                break;
             }
         }
         
