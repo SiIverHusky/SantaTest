@@ -842,6 +842,32 @@ private:
             stop_speech_webserver();
             return "🔴 Santa speech control panel closed. Web server stopped.";
         });
+
+        // BeQuiet/Silent tool - sets volume to 50%
+        mcp_server.AddTool("self.audio.be_quiet", "Make Santa speak more quietly by setting volume to 50%. Use when user asks Santa to be quiet, silent, or speak softer.", PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
+            ESP_LOGI(TAG, "🔇 BeQuiet command received - setting volume to 50%");
+            auto& board = Board::GetInstance();
+            auto codec = board.GetAudioCodec();
+            if (codec) {
+                codec->SetOutputVolume(50);
+                ESP_LOGI(TAG, "🔉 Volume set to 50%");
+                return "🔉 Santa will now speak more quietly (volume set to 50%)";
+            } else {
+                ESP_LOGW(TAG, "❌ Audio codec not available");
+                return "❌ Audio codec not available";
+            }
+        });
+
+        // Enough/Quit tool - sends exit command to server
+        mcp_server.AddTool("self.system.quit", "Quit the application and restart Santa. Use when user says goodbye, wants to end the conversation, or asks Santa to go away.", PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
+            ESP_LOGI(TAG, "🚪 Quit command received - sending exit command to server");
+            auto& app = Application::GetInstance();
+            
+            // Send a system command to the server to exit/quit
+            app.SendSystemCommand("exit");
+            
+            return "🎅 Ho ho ho! Santa is telling the server to end this session. See you soon! 🎄";
+        });
     }
 
     void InitializeI2c() {

@@ -60,6 +60,7 @@ public:
     void PlaySound(const std::string_view& sound);
     bool CanEnterSleepMode();
     void SendMcpMessage(const std::string& payload);
+    void SendSystemCommand(const std::string& command);
     void SetAecMode(AecMode mode);
     AecMode GetAecMode() const { return aec_mode_; }
     AudioService& GetAudioService() { return audio_service_; }
