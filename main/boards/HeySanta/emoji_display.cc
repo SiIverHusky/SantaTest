@@ -124,9 +124,9 @@ void EmojiWidget::SetEmotion(const char* emotion)
          {"star",       {MMAP_EMOJI_STAR_AAF,      true, 25}},
          {"elf",        {MMAP_EMOJI_WHOLE_ELF_AAF, true, 25}},
          {"cross",      {MMAP_EMOJI_CROSS_AAF,     true, 24}},
-         {"cross2",     {MMAP_EMOJI_CROSS_AAF,     true, 24}},
+         {"cross2",     {MMAP_EMOJI_CROSS2_AAF,     true, 24}},
          {"happy",      {MMAP_EMOJI_HAPPY_AAF,     true, 24}},
-         {"happy2",     {MMAP_EMOJI_HAPPY_AAF,     true, 24}}
+         {"happy2",     {MMAP_EMOJI_HAPPY2_AAF,     true, 24}}
     };
 
     auto it = emotion_map.find(emotion);

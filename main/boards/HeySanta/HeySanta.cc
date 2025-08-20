@@ -37,9 +37,6 @@ float m2_coefficient = 1.0;
 static httpd_handle_t control_server = NULL;
 static bool web_server_active = false;
 
-// Global stop flag for scenes
-static bool scene_stop_requested = false;
-
 class HeySantaCodec : public SantaAudioCodec {
 public:
     HeySantaCodec(i2c_master_bus_handle_t i2c_bus, int input_sample_rate, int output_sample_rate,
@@ -120,13 +117,6 @@ private:
         }
     }
 
-    // Function to stop all motors immediately
-    static void stop_all_motors() {
-        ESP_LOGI(TAG, "Stopping all motors");
-        set_motor_A_speed(0);
-        set_motor_B_speed(0);
-    }
-
     uint32_t unbiasedRandom3() {
         uint32_t r;
         const uint32_t upper_bound = 0xFFFFFFFF - (0xFFFFFFFF % 3);
@@ -146,242 +136,238 @@ private:
         return min + (r % range);
     }
 
-    // Modified shake body method with stop check
+    // Shake body variations
     void ShakeBody() {
-        ESP_LOGI(TAG, "Body shake start - 9 seconds");
+        ESP_LOGI(TAG, "Body shake 100 percent speed");
         set_motor_A_speed(100);
-        
-        // Check for stop every 100ms during the 9 second shake
-        for (int i = 0; i < 90; i++) {
-            if (scene_stop_requested) {
-                ESP_LOGI(TAG, "Scene stop requested during body shake");
-                stop_all_motors();
-                scene_stop_requested = false; // Reset flag
-                return;
-            }
-            vTaskDelay(100 / portTICK_PERIOD_MS);
-        }
-        
-        set_motor_A_speed(0);  // Stop motor
+        vTaskDelay(9000 / portTICK_PERIOD_MS);
+        set_motor_A_speed(0);
     }
 
-    // Modified special shake for scene 33b7 with stop check
+    void ShakeBody2() {
+        ESP_LOGI(TAG, "Body shake 95 percent speed");
+        set_motor_A_speed(95);
+        vTaskDelay(9000 / portTICK_PERIOD_MS);
+        set_motor_A_speed(0);
+    }
+
+    // NEW: Special movement for scene 13g4
+    void ShakeBodySpecial13g4() {
+        ESP_LOGI(TAG, "Body shake special 13g4 - same as ExecuteScene13g4");
+        set_motor_A_speed(95);
+        vTaskDelay(9000 / portTICK_PERIOD_MS);
+        set_motor_A_speed(0);
+    }
+
+    // Special shake for scene 33b7
     void ShakeHipsSpecial() {
-        ESP_LOGI(TAG, "Hip shake - low speed 5s + high speed 5s");
+        ESP_LOGI(TAG, "Hip shake special pattern slow to fast");
         
-        // Low speed 5 seconds
-        set_motor_B_speed(50);
-        for (int i = 0; i < 50; i++) {
-            if (scene_stop_requested) {
-                ESP_LOGI(TAG, "Scene stop requested during hip shake (low speed)");
-                stop_all_motors();
-                scene_stop_requested = false;
-                return;
-            }
+        // Slow speed alternating for 5 seconds (50 speed)
+        int slow_cycles = 8; // About 5 seconds at 400ms per cycle
+        for (int i = 0; i < slow_cycles; i++) {
+            set_motor_B_speed(74);    // Forward at slow speed
+            vTaskDelay(250 / portTICK_PERIOD_MS);
+            set_motor_B_speed(0);      // Stop - adds gentleness
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+            set_motor_B_speed(-74);   // Backward at slow speed
+            vTaskDelay(250 / portTICK_PERIOD_MS);
+            set_motor_B_speed(0);      // Stop - adds gentleness
             vTaskDelay(100 / portTICK_PERIOD_MS);
         }
         
-        // High speed 5 seconds  
-        set_motor_B_speed(100);
-        for (int i = 0; i < 50; i++) {
-            if (scene_stop_requested) {
-                ESP_LOGI(TAG, "Scene stop requested during hip shake (high speed)");
-                stop_all_motors();
-                scene_stop_requested = false;
-                return;
-            }
-            vTaskDelay(100 / portTICK_PERIOD_MS);
+        // Fast speed alternating for 5 seconds (90 speed)
+        int fast_cycles = 12; // About 5 seconds at 400ms per cycle
+        for (int i = 0; i < fast_cycles; i++) {
+            set_motor_B_speed(74);    // Forward at fast speed
+            vTaskDelay(45 / portTICK_PERIOD_MS);
+            set_motor_B_speed(0);      // Stop - adds gentleness
+            vTaskDelay(25 / portTICK_PERIOD_MS);
+            set_motor_B_speed(-74);   // Backward at fast speed
+            vTaskDelay(45 / portTICK_PERIOD_MS);
+            set_motor_B_speed(0);      // Stop - adds gentleness
+            vTaskDelay(25 / portTICK_PERIOD_MS);
         }
         
-        set_motor_B_speed(0);  // Stop motor
+        set_motor_B_speed(0);
+        ESP_LOGI(TAG, "Hip shake special complete!");
     }
 
-    // Scene methods
+    // Scene methods with distributed shake variations
     void ExecuteScene7c2() {
-        scene_stop_requested = false; // Reset stop flag
         auto display = Board::GetInstance().GetDisplay();
         display->SetEmotion("heart");
-        ShakeBody();
+        ShakeBody2();
     }
 
     void ExecuteScene9c5() {
-        scene_stop_requested = false; // Reset stop flag
         auto display = Board::GetInstance().GetDisplay();
-        // Loop between normal and happy during shake
         display->SetEmotion("neutral");
         for (int i = 0; i < 3; i++) {
-            if (scene_stop_requested) {
-                ESP_LOGI(TAG, "Scene stop requested during 9c5");
-                stop_all_motors();
-                scene_stop_requested = false;
-                return;
-            }
-            
-            set_motor_A_speed(100);
-            for (int j = 0; j < 15; j++) {
-                if (scene_stop_requested) {
-                    stop_all_motors();
-                    scene_stop_requested = false;
-                    return;
-                }
-                vTaskDelay(100 / portTICK_PERIOD_MS);
-            }
-            
+            set_motor_A_speed(95);
+            vTaskDelay(1500 / portTICK_PERIOD_MS);
             display->SetEmotion("happy");
-            for (int j = 0; j < 15; j++) {
-                if (scene_stop_requested) {
-                    stop_all_motors();
-                    scene_stop_requested = false;
-                    return;
-                }
-                vTaskDelay(100 / portTICK_PERIOD_MS);
-            }
-            
+            vTaskDelay(1500 / portTICK_PERIOD_MS);
             display->SetEmotion("neutral");
-            for (int j = 0; j < 15; j++) {
-                if (scene_stop_requested) {
-                    stop_all_motors();
-                    scene_stop_requested = false;
-                    return;
-                }
-                vTaskDelay(100 / portTICK_PERIOD_MS);
-            }
+            vTaskDelay(1500 / portTICK_PERIOD_MS);
         }
         set_motor_A_speed(0);
     }
 
     void ExecuteScene10g1() {
-        scene_stop_requested = false;
         auto display = Board::GetInstance().GetDisplay();
         display->SetEmotion("bell");
         ShakeBody();
     }
 
     void ExecuteScene11g2() {
-        scene_stop_requested = false;
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("happy");
+        ShakeBody2();
+    }
+
+    // NEW: Scene 11g2.1 - happy emotion with ShakeBody2 (95% speed)
+    void ExecuteScene11g2_1() {
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("happy");
+        ShakeBody2();
+    }
+
+    // NEW: Scene 11g2.2 - happy emotion with ShakeBody (100% speed)
+    void ExecuteScene11g2_2() {
         auto display = Board::GetInstance().GetDisplay();
         display->SetEmotion("happy");
         ShakeBody();
     }
 
     void ExecuteScene12g3_1() {
-        scene_stop_requested = false;
         auto display = Board::GetInstance().GetDisplay();
         display->SetEmotion("happy2");
         ShakeBody();
     }
 
     void ExecuteScene12g3_2() {
-        scene_stop_requested = false;
         auto display = Board::GetInstance().GetDisplay();
         display->SetEmotion("happy");
         ShakeBody();
     }
 
-    void ExecuteScene14h1() {
-        scene_stop_requested = false;
+    void ExecuteScene13g4() {
         auto display = Board::GetInstance().GetDisplay();
-        display->SetEmotion("neutral");
-        ShakeBody();
+        display->SetEmotion("happy2");
+        ShakeBodySpecial13g4();
+    }
+
+    void ExecuteScene20a4() {
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("happy2");
+        // Eye happy2 only - no movement
     }
 
     void ExecuteScene21e3() {
-        scene_stop_requested = false;
         auto display = Board::GetInstance().GetDisplay();
         display->SetEmotion("star");
-        ShakeBody();
+        ShakeBody2();
     }
 
     void ExecuteScene23e2() {
-        scene_stop_requested = false;
         auto display = Board::GetInstance().GetDisplay();
         display->SetEmotion("cookie");
         ShakeBody();
     }
 
     void ExecuteScene25d1() {
-        scene_stop_requested = false;
         auto display = Board::GetInstance().GetDisplay();
         display->SetEmotion("neutral");
         // No body shake
     }
 
     void ExecuteScene26d2() {
-        scene_stop_requested = false;
         auto display = Board::GetInstance().GetDisplay();
         display->SetEmotion("star");
-        ShakeBody();
+        dance(); // NEW: Use dance movement with star eye
     }
 
     void ExecuteScene27d3() {
-        scene_stop_requested = false;
         auto display = Board::GetInstance().GetDisplay();
         display->SetEmotion("happy");
-        // No body shake
+        ShakeBody2();
     }
 
     void ExecuteScene28b8() {
-        scene_stop_requested = false;
         auto display = Board::GetInstance().GetDisplay();
         display->SetEmotion("star");
         ShakeBody();
     }
 
-    void ExecuteScene30b6() {
-        scene_stop_requested = false;
+    // NEW: Scene 29 - same as scene 28
+    void ExecuteScene29() {
         auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("star");
+        ShakeBody();
+    }
+
+    // MODIFIED: Scene 30 - GIF from elf to snowman repeatedly
+    void ExecuteScene30b6() {
+        auto display = Board::GetInstance().GetDisplay();
+        
+        // Start ShakeBody in background
+        set_motor_A_speed(100);
+        
+        // GIF animation: repeatedly change from elf to snowman
+        for (int i = 0; i < 15; i++) { // 15 cycles = about 9 seconds
+            display->SetEmotion("elf");
+            vTaskDelay(900 / portTICK_PERIOD_MS);
+            display->SetEmotion("snowman");
+            vTaskDelay(900 / portTICK_PERIOD_MS);
+        }
+        
+        // Stop motor and end with snowman
+        set_motor_A_speed(0);
         display->SetEmotion("snowman");
+    }
+
+    // NEW: Scene 31 - happy2 emotion with ShakeBody (100% speed)
+    void ExecuteScene31() {
+        auto display = Board::GetInstance().GetDisplay();
+        display->SetEmotion("happy2");
         ShakeBody();
     }
 
     void ExecuteScene33b7() {
-        scene_stop_requested = false;
         auto display = Board::GetInstance().GetDisplay();
         display->SetEmotion("happy");
         ShakeHipsSpecial();
     }
 
     void ExecuteScene35b5() {
-        scene_stop_requested = false;
         auto display = Board::GetInstance().GetDisplay();
-        display->SetEmotion("happy");
+        display->SetEmotion("happy2");
         // No shake
     }
 
+    // MODIFIED: Scene 36 - neutral to happy after 2 second delay
     void ExecuteScene36f5() {
-        scene_stop_requested = false;
         auto display = Board::GetInstance().GetDisplay();
         display->SetEmotion("neutral");
-        
-        // 2 second delay with stop check
-        for (int i = 0; i < 20; i++) {
-            if (scene_stop_requested) {
-                ESP_LOGI(TAG, "Scene stop requested during 36f5 delay");
-                scene_stop_requested = false;
-                return;
-            }
-            vTaskDelay(100 / portTICK_PERIOD_MS);
-        }
-        
-        ShakeBody();
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+        display->SetEmotion("happy");
+        ShakeBody2();
     }
 
     void ExecuteScene37f4() {
-        scene_stop_requested = false;
         auto display = Board::GetInstance().GetDisplay();
         display->SetEmotion("elf");
-        ShakeBody();
+        ShakeBody2();
     }
 
     void ExecuteScene38f1() {
-        scene_stop_requested = false;
         auto display = Board::GetInstance().GetDisplay();
         display->SetEmotion("sleep");
         // No shake
     }
 
     void ExecuteScene40() {
-        scene_stop_requested = false;
         auto display = Board::GetInstance().GetDisplay();
         display->SetEmotion("happy");
         ShakeBody();
@@ -406,24 +392,17 @@ private:
         "button { padding: 12px 20px; margin: 6px; font-size: 14px; border: none; border-radius: 8px; cursor: pointer; min-width: 120px; transition: all 0.3s ease; font-weight: bold; }"
         ".scene-btn { background: linear-gradient(45deg, #FF9800, #F57C00); color: white; box-shadow: 0 4px 15px rgba(255, 152, 0, 0.4); }"
         ".emotion-btn { background: linear-gradient(45deg, #E91E63, #C2185B); color: white; box-shadow: 0 4px 15px rgba(233, 30, 99, 0.4); }"
-        ".emergency-btn { background: linear-gradient(45deg, #FF5722, #D84315); color: white; box-shadow: 0 6px 20px rgba(255, 87, 34, 0.5); font-size: 18px; min-width: 200px; }"
         ".stop-btn { background: linear-gradient(45deg, #F44336, #D32F2F); color: white; box-shadow: 0 6px 20px rgba(244, 67, 54, 0.4); }"
         "button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.4); }"
         ".control-section { margin: 30px 0; padding: 25px; background: rgba(255,255,255,0.1); border-radius: 20px; }"
         ".scene-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 20px 0; }"
         ".emotion-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 20px 0; }"
-        ".emergency-section { margin: 20px 0; padding: 20px; background: rgba(255,87,34,0.2); border-radius: 15px; border: 2px solid rgba(255,87,34,0.5); }"
         ".status { margin: 25px 0; padding: 20px; background: rgba(255,255,255,0.1); border-radius: 15px; font-weight: bold; font-size: 18px; }"
         "</style>"
         "</head>"
         "<body>"
         "<div class='container'>"
         "<h1>🎅 Santa Scene Control 🎬</h1>"
-        
-        "<div class='emergency-section'>"
-        "<h2>🚨 Emergency Controls</h2>"
-        "<button class='emergency-btn' onclick='stopScene()'>⏹️ STOP SCENE</button>"
-        "</div>"
         
         "<div class='control-section'>"
         "<h2>🎬 Scene Controls</h2>"
@@ -432,16 +411,21 @@ private:
         "<button class='scene-btn' onclick='executeScene(\"9c5\")'>9c5</button>"
         "<button class='scene-btn' onclick='executeScene(\"10g1\")'>10g1</button>"
         "<button class='scene-btn' onclick='executeScene(\"11g2\")'>11g2</button>"
+        "<button class='scene-btn' onclick='executeScene(\"11g2-1\")'>11g2.1</button>"
+        "<button class='scene-btn' onclick='executeScene(\"11g2-2\")'>11g2.2</button>"
         "<button class='scene-btn' onclick='executeScene(\"12g3-1\")'>12g3.1</button>"
         "<button class='scene-btn' onclick='executeScene(\"12g3-2\")'>12g3.2</button>"
-        "<button class='scene-btn' onclick='executeScene(\"14h1\")'>14h1</button>"
+        "<button class='scene-btn' onclick='executeScene(\"13g4\")'>13g4</button>"
+        "<button class='scene-btn' onclick='executeScene(\"20a4\")'>20a4</button>"
         "<button class='scene-btn' onclick='executeScene(\"21e3\")'>21e3</button>"
         "<button class='scene-btn' onclick='executeScene(\"23e2\")'>23e2</button>"
         "<button class='scene-btn' onclick='executeScene(\"25d1\")'>25d1</button>"
         "<button class='scene-btn' onclick='executeScene(\"26d2\")'>26d2</button>"
         "<button class='scene-btn' onclick='executeScene(\"27d3\")'>27d3</button>"
         "<button class='scene-btn' onclick='executeScene(\"28b8\")'>28b8</button>"
+        "<button class='scene-btn' onclick='executeScene(\"29\")'>29</button>"
         "<button class='scene-btn' onclick='executeScene(\"30b6\")'>30b6</button>"
+        "<button class='scene-btn' onclick='executeScene(\"31\")'>31</button>"
         "<button class='scene-btn' onclick='executeScene(\"33b7\")'>33b7</button>"
         "<button class='scene-btn' onclick='executeScene(\"35b5\")'>35b5</button>"
         "<button class='scene-btn' onclick='executeScene(\"36f5\")'>36f5</button>"
@@ -510,22 +494,6 @@ private:
         "    });"
         "}"
         
-        "function stopScene() {"
-        "  console.log('Stopping scene');"
-        "  document.getElementById('status').innerText = 'STOPPING SCENE...';"
-        "  "
-        "  fetch('/scene-stop')"
-        "    .then(response => response.text())"
-        "    .then(data => {"
-        "      console.log('Response:', data);"
-        "      document.getElementById('status').innerText = data;"
-        "    })"
-        "    .catch(error => {"
-        "      console.error('Error:', error);"
-        "      document.getElementById('status').innerText = 'Error: ' + error;"
-        "    });"
-        "}"
-        
         "function stopServer() {"
         "  document.getElementById('status').innerText = 'Stopping control panel...';"
         "  fetch('/stop')"
@@ -569,6 +537,14 @@ private:
                     board.ExecuteScene11g2();
                     httpd_resp_send(req, "🎬 Scene 11g2 executed!", -1);
                 }
+                else if (strcmp(scene_id, "11g2-1") == 0) {
+                    board.ExecuteScene11g2_1();
+                    httpd_resp_send(req, "🎬 Scene 11g2.1 executed!", -1);
+                }
+                else if (strcmp(scene_id, "11g2-2") == 0) {
+                    board.ExecuteScene11g2_2();
+                    httpd_resp_send(req, "🎬 Scene 11g2.2 executed!", -1);
+                }
                 else if (strcmp(scene_id, "12g3-1") == 0) {
                     board.ExecuteScene12g3_1();
                     httpd_resp_send(req, "🎬 Scene 12g3.1 executed!", -1);
@@ -577,9 +553,13 @@ private:
                     board.ExecuteScene12g3_2();
                     httpd_resp_send(req, "🎬 Scene 12g3.2 executed!", -1);
                 }
-                else if (strcmp(scene_id, "14h1") == 0) {
-                    board.ExecuteScene14h1();
-                    httpd_resp_send(req, "🎬 Scene 14h1 executed!", -1);
+                else if (strcmp(scene_id, "13g4") == 0) {
+                    board.ExecuteScene13g4();
+                    httpd_resp_send(req, "🎬 Scene 13g4 executed!", -1);
+                }
+                else if (strcmp(scene_id, "20a4") == 0) {
+                    board.ExecuteScene20a4();
+                    httpd_resp_send(req, "🎬 Scene 20a4 executed!", -1);
                 }
                 else if (strcmp(scene_id, "21e3") == 0) {
                     board.ExecuteScene21e3();
@@ -605,9 +585,17 @@ private:
                     board.ExecuteScene28b8();
                     httpd_resp_send(req, "🎬 Scene 28b8 executed!", -1);
                 }
+                else if (strcmp(scene_id, "29") == 0) {
+                    board.ExecuteScene29();
+                    httpd_resp_send(req, "🎬 Scene 29 executed!", -1);
+                }
                 else if (strcmp(scene_id, "30b6") == 0) {
                     board.ExecuteScene30b6();
                     httpd_resp_send(req, "🎬 Scene 30b6 executed!", -1);
+                }
+                else if (strcmp(scene_id, "31") == 0) {
+                    board.ExecuteScene31();
+                    httpd_resp_send(req, "🎬 Scene 31 executed!", -1);
                 }
                 else if (strcmp(scene_id, "33b7") == 0) {
                     board.ExecuteScene33b7();
@@ -641,15 +629,6 @@ private:
         }
         
         httpd_resp_send(req, "❌ Missing scene ID parameter", -1);
-        return ESP_OK;
-    }
-
-    // Scene stop handler
-    static esp_err_t scene_stop_handler(httpd_req_t *req) {
-        ESP_LOGI(TAG, "Scene stop requested!");
-        scene_stop_requested = true;
-        stop_all_motors(); // Immediately stop motors
-        httpd_resp_send(req, "⏹️ Scene stopped!", -1);
         return ESP_OK;
     }
 
@@ -696,7 +675,7 @@ public:
             
             // Hip movement
             for (int j = 0; j < 3; j++) {
-                int hip_speeds[3] = {90, 95, 100};
+                int hip_speeds[3] = {76, 86, 100};
                 set_motor_B_speed(hip_speeds[hip_mode]);
                 vTaskDelay(150 / portTICK_PERIOD_MS);
                 set_motor_B_speed(-hip_speeds[hip_mode]);
@@ -737,13 +716,12 @@ public:
         httpd_config_t config = HTTPD_DEFAULT_CONFIG();
         config.server_port = 8080;
         config.stack_size = 8192;
-        config.max_uri_handlers = 8;  // Only need 5 handlers now!
+        config.max_uri_handlers = 5;
         
         if (httpd_start(&control_server, &config) == ESP_OK) {
             httpd_uri_t handlers[] = {
                 {"/", HTTP_GET, control_page_handler, NULL},
-                {"/scene", HTTP_GET, scene_handler, NULL},        // Single handler for ALL scenes
-                {"/scene-stop", HTTP_GET, scene_stop_handler, NULL},
+                {"/scene", HTTP_GET, scene_handler, NULL},
                 {"/emotion", HTTP_GET, emotion_handler, NULL},
                 {"/stop", HTTP_GET, stop_handler, NULL}
             };
