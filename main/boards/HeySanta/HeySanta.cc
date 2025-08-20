@@ -419,7 +419,7 @@ private:
     static esp_err_t status_handler(httpd_req_t *req) {
         char response[256];
         snprintf(response, sizeof(response), 
-                 "🎅 Santa is ready to speak! | 🎄 Christmas magic activated! | ✨ Web interface connected!");
+                 " Santa is ready to speak! |  Christmas magic activated! |  Web interface connected!");
         
         httpd_resp_send(req, response, strlen(response));
         return ESP_OK;
@@ -428,35 +428,35 @@ private:
     // Speech handler for web requests
     // Speech handler for web requests
     static esp_err_t speak_handler(httpd_req_t *req) {
-        ESP_LOGI(TAG, "🎅 === SPEAK HANDLER CALLED ===");
+        ESP_LOGI(TAG, " === SPEAK HANDLER CALLED ===");
         
         // Use smaller, stack-efficient buffers
         char* query = (char*)malloc(512);
         if (!query) {
             ESP_LOGE(TAG, "Failed to allocate query buffer");
-            httpd_resp_send(req, "❌ Memory error", -1);
+            httpd_resp_send(req, " Memory error", -1);
             return ESP_ERR_NO_MEM;
         }
         
         esp_err_t query_result = httpd_req_get_url_query_str(req, query, 512);
-        ESP_LOGI(TAG, "🎅 Query string retrieval result: %s", esp_err_to_name(query_result));
+        ESP_LOGI(TAG, " Query string retrieval result: %s", esp_err_to_name(query_result));
         
         if (query_result == ESP_OK) {
-            ESP_LOGI(TAG, "🎅 Query string: '%.100s%s'", query, strlen(query) > 100 ? "..." : "");
+            ESP_LOGI(TAG, " Query string: '%.100s%s'", query, strlen(query) > 100 ? "..." : "");
             
             char* text = (char*)malloc(256);
             if (!text) {
                 free(query);
                 ESP_LOGE(TAG, "Failed to allocate text buffer");
-                httpd_resp_send(req, "❌ Memory error", -1);
+                httpd_resp_send(req, " Memory error", -1);
                 return ESP_ERR_NO_MEM;
             }
             
             esp_err_t param_result = httpd_query_key_value(query, "text", text, 256);
-            ESP_LOGI(TAG, "🎅 Text parameter extraction result: %s", esp_err_to_name(param_result));
+            ESP_LOGI(TAG, " Text parameter extraction result: %s", esp_err_to_name(param_result));
             
             if (param_result == ESP_OK) {
-                ESP_LOGI(TAG, "🎅 Raw text: '%.50s%s' (len: %d)", 
+                ESP_LOGI(TAG, " Raw text: '%.50s%s' (len: %d)", 
                         text, strlen(text) > 50 ? "..." : "", (int)strlen(text));
                 
                 // Proper URL decode
@@ -475,36 +475,36 @@ private:
                     }
                 }
                 
-                ESP_LOGI(TAG, "🎅 Decoded text: '%s'", decoded_text.c_str());
-                ESP_LOGI(TAG, "🎅 *** CALLING app.SpeakText() ***");
+                ESP_LOGI(TAG, " Decoded text: '%s'", decoded_text.c_str());
+                ESP_LOGI(TAG, " *** CALLING app.SpeakText() ***");
                 
                 // Get application instance and call SpeakText
                 auto& app = Application::GetInstance();
                 app.SpeakText(decoded_text);
                 
-                ESP_LOGI(TAG, "🎅 *** app.SpeakText() completed ***");
+                ESP_LOGI(TAG, " *** app.SpeakText() completed ***");
                 
                 // Send simple response
-                const char* response = "🎅 Santa speech command sent successfully!";
+                const char* response = " Santa speech command sent successfully!";
                 httpd_resp_send(req, response, strlen(response));
                 
                 free(text);
                 free(query);
-                ESP_LOGI(TAG, "🎅 === SPEAK HANDLER COMPLETED ===");
+                ESP_LOGI(TAG, " === SPEAK HANDLER COMPLETED ===");
                 return ESP_OK;
             }
             free(text);
         }
         
         free(query);
-        ESP_LOGW(TAG, "🎅 === SPEAK HANDLER FAILED ===");
-        httpd_resp_send(req, "❌ No text provided", -1);
+        ESP_LOGW(TAG, " === SPEAK HANDLER FAILED ===");
+        httpd_resp_send(req, " No text provided", -1);
         return ESP_OK;
     }
     // Add this new handler function in heysanta.cc
     // Replace the existing stop_handler with this version
     static esp_err_t stop_handler(httpd_req_t *req) {
-        ESP_LOGI(TAG, "🛑 === STOP HANDLER CALLED ===");
+        ESP_LOGI(TAG, " === STOP HANDLER CALLED ===");
 
         auto& app = Application::GetInstance();
 
@@ -512,13 +512,13 @@ private:
         app.SetWebControlPanelActive(false);
 
         // 2) Send immediate response to the browser
-        const char* response = "🔴 Santa speech control panel closed. Web server will stop shortly.";
+        const char* response = " Santa speech control panel closed. Web server will stop shortly.";
         httpd_resp_send(req, response, strlen(response));
 
         // 3) Defer the actual stop/reset work to the application task to avoid
         //    stopping the HTTP server from within its own handler thread.
         app.Schedule([&app]() {
-            ESP_LOGI(TAG, "🛑 Stopping Santa and resetting to idle...");
+            ESP_LOGI(TAG, " Stopping Santa and resetting to idle...");
 
             // Abort current speech and reset device state
             app.AbortSpeaking(kAbortReasonNone);
@@ -527,17 +527,17 @@ private:
 
             // Stop the speech web server safely from another task context
             if (speech_server != NULL) {
-                ESP_LOGI(TAG, "🛑 Stopping Santa speech web server (async)...");
+                ESP_LOGI(TAG, " Stopping Santa speech web server (async)...");
                 httpd_stop(speech_server);
                 speech_server = NULL;
                 web_speech_active = false;
-                ESP_LOGI(TAG, "🛑 Santa speech web server stopped");
+                ESP_LOGI(TAG, " Santa speech web server stopped");
             }
 
-            ESP_LOGI(TAG, "🛑 Stop completed. Device reset to idle and control panel closed.");
+            ESP_LOGI(TAG, " Stop completed. Device reset to idle and control panel closed.");
         });
 
-        ESP_LOGI(TAG, "🛑 === STOP HANDLER COMPLETED (response sent, shutdown scheduled) ===");
+        ESP_LOGI(TAG, " === STOP HANDLER COMPLETED (response sent, shutdown scheduled) ===");
         return ESP_OK;
     }
 
@@ -740,7 +740,7 @@ private:
                 .user_ctx  = NULL
             };
             httpd_register_uri_handler(speech_server, &uri_stop);
-            ESP_LOGI(TAG, "🎅 Santa speech web server started successfully!");
+            ESP_LOGI(TAG, " Santa speech web server started successfully!");
             web_speech_active = true;
             
         } else {
@@ -774,11 +774,11 @@ private:
         
         // NEW MCP TOOL: Open Santa speech control panel
         mcp_server.AddTool("open_santa_speech_panel", "开启圣诞老人语音控制面板", PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
-            ESP_LOGI(TAG, "🎅 Opening Santa speech control panel...");
+            ESP_LOGI(TAG, " Opening Santa speech control panel...");
             
             if (!WifiStation::GetInstance().IsConnected()) {
                 ESP_LOGW(TAG, "WiFi not connected, cannot start web server");
-                return "❌ WiFi not connected. Please connect to WiFi first.";
+                return " WiFi not connected. Please connect to WiFi first.";
             }
             
             // Set the web control panel flag in Application
@@ -795,12 +795,12 @@ private:
             
             char response[512];
             snprintf(response, sizeof(response), 
-                    "🎅 Santa Speech Control Panel Started!\n"
-                    "📱 Open your browser and go to:\n"
-                    "🌐 http://" IPSTR ":8080\n"
-                    "🗣️ Type messages for Santa to speak\n"
-                    "🎄 Includes preset Christmas messages\n"
-                    "✨ Spread Christmas joy with Santa's voice!",
+                    " Santa Speech Control Panel Started!\n"
+                    " Open your browser and go to:\n"
+                    " http://" IPSTR ":8080\n"
+                    " Type messages for Santa to speak\n"
+                    " Includes preset Christmas messages\n"
+                    " Spread Christmas joy with Santa's voice!",
                     IP2STR(&ip_info.ip));
             
             ESP_LOGI(TAG, "%s", response);
@@ -824,7 +824,7 @@ private:
             return true;
         });
         mcp_server.AddTool("close_santa_speech_panel", "关闭圣诞老人语音控制面板", PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
-            ESP_LOGI(TAG, "🎅 Closing Santa speech control panel...");
+            ESP_LOGI(TAG, " Closing Santa speech control panel...");
             
             // Clear the web control panel flag in Application
             auto& app = Application::GetInstance();
@@ -836,37 +836,37 @@ private:
                 
                 // Clear any audio queues
                 // Note: You might need to make these methods public or add a public method to do this
-                ESP_LOGI(TAG, "🎅 Resetting device state after closing control panel");
+                ESP_LOGI(TAG, " Resetting device state after closing control panel");
             });
             
             stop_speech_webserver();
-            return "🔴 Santa speech control panel closed. Web server stopped.";
+            return " Santa speech control panel closed. Web server stopped.";
         });
 
         // BeQuiet/Silent tool - sets volume to 50%
-        mcp_server.AddTool("self.audio.be_quiet", "Make Santa speak more quietly by setting volume to 50%. Use when user asks Santa to be quiet, silent, or speak softer.", PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
-            ESP_LOGI(TAG, "🔇 BeQuiet command received - setting volume to 50%");
+        mcp_server.AddTool("self.audio.be_quiet", "Make Santa speak more quietly by setting volume to 50%%. Use when user asks Santa to be quiet, silent, or speak softer.", PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
+            ESP_LOGI(TAG, "BeQuiet command received - setting volume to 50%%");
             auto& board = Board::GetInstance();
             auto codec = board.GetAudioCodec();
             if (codec) {
                 codec->SetOutputVolume(50);
-                ESP_LOGI(TAG, "🔉 Volume set to 50%");
-                return "🔉 Santa will now speak more quietly (volume set to 50%)";
+                ESP_LOGI(TAG, "Volume set to 50%%");
+                return "Santa will now speak more quietly (volume set to 50%)";
             } else {
-                ESP_LOGW(TAG, "❌ Audio codec not available");
-                return "❌ Audio codec not available";
+                ESP_LOGW(TAG, "Audio codec not available");
+                return "Audio codec not available";
             }
         });
 
         // Enough/Quit tool - sends exit command to server
         mcp_server.AddTool("self.system.quit", "Quit the application and restart Santa. Use when user says goodbye, wants to end the conversation, or asks Santa to go away.", PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
-            ESP_LOGI(TAG, "🚪 Quit command received - sending exit command to server");
+            ESP_LOGI(TAG, " Quit command received - sending exit command to server");
             auto& app = Application::GetInstance();
             
             // Send a system command to the server to exit/quit
             app.SendSystemCommand("exit");
             
-            return "🎅 Ho ho ho! Santa is telling the server to end this session. See you soon! 🎄";
+            return " Ho ho ho! Santa is telling the server to end this session. See you soon! 🎄";
         });
     }
 
