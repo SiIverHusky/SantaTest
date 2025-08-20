@@ -482,8 +482,8 @@ void Application::Start() {
 
                         // Only trigger stop shake for longer TTS sequences (likely actual speech, not MCP responses)
                         // Only trigger stop shake for longer TTS sequences (likely actual speech, not MCP responses)
-                        if (duration_ms > 2000) { // Only for TTS longer than 2 seconds
-                            ESP_LOGI(TAG, "Long TTS detected (%d ms), triggering stop shake [Web panel: %s]", (int)duration_ms, web_control_panel_active_ ? "active" : "inactive");
+                        if (duration_ms > 1) { // Only for TTS longer than 2 seconds
+                            ESP_LOGI(TAG, "TTS detected (%d ms), triggering stop shake [Web panel: %s]", (int)duration_ms, web_control_panel_active_ ? "active" : "inactive");
 
                             Schedule([this]() {
                                 ESP_LOGI(TAG, "stop Head shake ");
