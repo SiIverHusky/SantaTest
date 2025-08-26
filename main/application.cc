@@ -8,6 +8,9 @@
 #include "font_awesome_symbols.h"
 #include "assets/lang_config.h"
 #include "mcp_server.h"
+#if CONFIG_BT_NIMBLE_ENABLED
+#include "protocols/ble_protocol.h"
+#endif
 
 #include <cstring>
 #include <esp_log.h>
@@ -60,6 +63,12 @@ Application::Application() {
 }
 
 Application::~Application() {
+#if CONFIG_BT_NIMBLE_ENABLED
+    if (ble_protocol_) {
+        ble_protocol_->Stop();
+        ble_protocol_.reset();
+    }
+#endif
     if (clock_timer_handle_ != nullptr) {
         esp_timer_stop(clock_timer_handle_);
         esp_timer_delete(clock_timer_handle_);
@@ -626,6 +635,62 @@ void Application::Start() {
     });
     bool protocol_started = protocol_->Start();
 
+    // Initialize BLE protocol for MCP communication
+#if CONFIG_BT_NIMBLE_ENABLED
+    ESP_LOGI(TAG, "Initializing BLE protocol for MCP communication");
+    ble_protocol_ = std::make_unique<BleProtocol>();
+    
+    ble_protocol_->OnCommand([this](const std::string& command) {
+        ESP_LOGI(TAG, "BLE command received: %s", command.c_str());
+        
+        // Parse JSON command
+        cJSON* json = cJSON_Parse(command.c_str());
+        if (json) {
+            cJSON* type = cJSON_GetObjectItem(json, "type");
+            if (type && cJSON_IsString(type) && strcmp(type->valuestring, "mcp") == 0) {
+                cJSON* payload = cJSON_GetObjectItem(json, "payload");
+                if (payload) {
+                    // Convert payload to string to pass safely to scheduled function
+                    char* payload_str = cJSON_PrintUnformatted(payload);
+                    if (payload_str) {
+                        std::string payload_string(payload_str);
+                        cJSON_free(payload_str);
+                        
+                        // Process MCP command and send response back via BLE
+                        Schedule([this, payload_string]() {
+                            // Parse the payload string back to JSON
+                            cJSON* payload_json = cJSON_Parse(payload_string.c_str());
+                            if (payload_json) {
+                                ProcessBleMcpCommand(payload_json);
+                                cJSON_Delete(payload_json);
+                            } else {
+                                ESP_LOGE(TAG, "Failed to parse BLE MCP payload: %s", payload_string.c_str());
+                            }
+                        });
+                    }
+                }
+            } else {
+                ESP_LOGW(TAG, "BLE: Only MCP commands are supported, ignoring: %s", command.c_str());
+            }
+            cJSON_Delete(json);
+        } else {
+            ESP_LOGW(TAG, "BLE: Invalid JSON command: %s", command.c_str());
+        }
+    });
+    
+    ble_protocol_->OnConnectionState([this](bool connected) {
+        ESP_LOGI(TAG, "BLE connection state changed: %s", connected ? "connected" : "disconnected");
+    });
+    
+    if (!ble_protocol_->Start()) {
+        ESP_LOGE(TAG, "Failed to start BLE protocol");
+        ble_protocol_.reset();
+    } else {
+        ESP_LOGI(TAG, "BLE protocol started successfully for MCP communication");
+    }
+#endif
+
+
     SetDeviceState(kDeviceStateIdle);
 
     has_server_time_ = ota.HasServerTime();
@@ -870,10 +935,81 @@ bool Application::CanEnterSleepMode() {
     return true;
 }
 
+void Application::ProcessBleMcpCommand(const cJSON* payload) {
+    ESP_LOGI(TAG, "Processing BLE MCP command");
+    
+    // Create a complete JSON-RPC message by adding the required fields
+    cJSON* complete_message = cJSON_CreateObject();
+    cJSON_AddStringToObject(complete_message, "jsonrpc", "2.0");
+    
+    // Copy method, id, and params from payload
+    cJSON* method_obj = cJSON_GetObjectItem(payload, "method");
+    cJSON* id_obj = cJSON_GetObjectItem(payload, "id");
+    cJSON* params_obj = cJSON_GetObjectItem(payload, "params");
+    
+    if (method_obj) {
+        cJSON_AddItemToObject(complete_message, "method", cJSON_Duplicate(method_obj, 1));
+    }
+    if (id_obj) {
+        cJSON_AddItemToObject(complete_message, "id", cJSON_Duplicate(id_obj, 1));
+    } else {
+        cJSON_AddNumberToObject(complete_message, "id", 0); // Default ID if not provided
+    }
+    if (params_obj) {
+        cJSON_AddItemToObject(complete_message, "params", cJSON_Duplicate(params_obj, 1));
+    }
+    
+    // Mark BLE MCP as active so responses are routed back to BLE
+    ble_mcp_active_ = true;
+    
+    // Let the MCP server handle the command - this will call SendMcpMessage with the response
+    McpServer::GetInstance().ParseMessage(complete_message);
+    
+    // Clean up
+    cJSON_Delete(complete_message);
+    
+    // Reset BLE MCP state after a short delay to allow response to be sent
+    Schedule([this]() {
+        ble_mcp_active_ = false;
+    });
+}
+
+void Application::SendBleMcpResponse(const std::string& response) {
+#if CONFIG_BT_NIMBLE_ENABLED
+    if (ble_protocol_ && ble_protocol_->IsConnected()) {
+        // Wrap the JSON-RPC response in the format expected by the web app
+        cJSON* wrapper = cJSON_CreateObject();
+        cJSON_AddStringToObject(wrapper, "type", "mcp_response");
+        
+        // Parse the response and add it as the payload
+        cJSON* response_json = cJSON_Parse(response.c_str());
+        if (response_json) {
+            cJSON_AddItemToObject(wrapper, "payload", response_json);
+        } else {
+            // If parsing fails, add as string
+            cJSON_AddStringToObject(wrapper, "payload", response.c_str());
+        }
+        
+        char* wrapped_response = cJSON_PrintUnformatted(wrapper);
+        if (wrapped_response) {
+            ble_protocol_->SendResponse(std::string(wrapped_response));
+            cJSON_free(wrapped_response);
+        }
+        cJSON_Delete(wrapper);
+    }
+#endif
+}
+
 void Application::SendMcpMessage(const std::string& payload) {
     Schedule([this, payload]() {
-        if (protocol_) {
-            protocol_->SendMcpMessage(payload);
+        // If BLE MCP is active, send response via BLE instead of main protocol
+        if (ble_mcp_active_) {
+            SendBleMcpResponse(payload);
+        } else {
+            // Send to main protocol (MQTT/WebSocket)
+            if (protocol_) {
+                protocol_->SendMcpMessage(payload);
+            }
         }
     });
 }
