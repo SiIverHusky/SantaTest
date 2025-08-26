@@ -67,10 +67,16 @@ public:
     virtual bool IsAudioChannelOpened() const = 0;
     virtual bool SendAudio(std::unique_ptr<AudioStreamPacket> packet) = 0;
     virtual void SendWakeWordDetected(const std::string& wake_word);
+    virtual void SendSttMessage(const std::string& text);
+    virtual void SendTextListening(const std::string& text, ListeningMode mode);
+    virtual void SendDirectMessage(const std::string& message);
     virtual void SendStartListening(ListeningMode mode);
     virtual void SendStopListening();
     virtual void SendAbortSpeaking(AbortReason reason);
+    virtual void SendIotDescriptors(const std::string& descriptors);
+    virtual void SendIotStates(const std::string& states);
     virtual void SendMcpMessage(const std::string& message);
+    virtual void RefreshActivity();
 
 protected:
     std::function<void(const cJSON* root)> on_incoming_json_;
