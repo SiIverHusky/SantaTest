@@ -647,30 +647,48 @@ void Application::Start() {
         cJSON* json = cJSON_Parse(command.c_str());
         if (json) {
             cJSON* type = cJSON_GetObjectItem(json, "type");
-            if (type && cJSON_IsString(type) && strcmp(type->valuestring, "mcp") == 0) {
-                cJSON* payload = cJSON_GetObjectItem(json, "payload");
-                if (payload) {
-                    // Convert payload to string to pass safely to scheduled function
-                    char* payload_str = cJSON_PrintUnformatted(payload);
-                    if (payload_str) {
-                        std::string payload_string(payload_str);
-                        cJSON_free(payload_str);
-                        
-                        // Process MCP command and send response back via BLE
-                        Schedule([this, payload_string]() {
-                            // Parse the payload string back to JSON
-                            cJSON* payload_json = cJSON_Parse(payload_string.c_str());
-                            if (payload_json) {
-                                ProcessBleMcpCommand(payload_json);
-                                cJSON_Delete(payload_json);
-                            } else {
-                                ESP_LOGE(TAG, "Failed to parse BLE MCP payload: %s", payload_string.c_str());
-                            }
-                        });
+            if (type && cJSON_IsString(type)) {
+                if (strcmp(type->valuestring, "mcp") == 0) {
+                    cJSON* payload = cJSON_GetObjectItem(json, "payload");
+                    if (payload) {
+                        // Convert payload to string to pass safely to scheduled function
+                        char* payload_str = cJSON_PrintUnformatted(payload);
+                        if (payload_str) {
+                            std::string payload_string(payload_str);
+                            cJSON_free(payload_str);
+                            
+                            // Process MCP command and send response back via BLE
+                            Schedule([this, payload_string]() {
+                                // Parse the payload string back to JSON
+                                cJSON* payload_json = cJSON_Parse(payload_string.c_str());
+                                if (payload_json) {
+                                    ProcessBleMcpCommand(payload_json);
+                                    cJSON_Delete(payload_json);
+                                } else {
+                                    ESP_LOGE(TAG, "Failed to parse BLE MCP payload: %s", payload_string.c_str());
+                                }
+                            });
+                        }
                     }
+                } else if (strcmp(type->valuestring, "text") == 0) {
+                    // Look for text directly in the command (not in payload)
+                    cJSON* text_obj = cJSON_GetObjectItem(json, "text");
+                    if (text_obj && cJSON_IsString(text_obj)) {
+                        std::string text_content(text_obj->valuestring);
+                        ESP_LOGI(TAG, "BLE text command received: %s", text_content.c_str());
+                        
+                        // Process text-to-speech via BLE
+                        Schedule([this, text_content]() {
+                            ProcessBleTextCommand(text_content);
+                        });
+                    } else {
+                        ESP_LOGW(TAG, "BLE text command missing text field");
+                    }
+                } else {
+                    ESP_LOGW(TAG, "BLE: Unknown command type: %s, supported types: mcp, text", type->valuestring);
                 }
             } else {
-                ESP_LOGW(TAG, "BLE: Only MCP commands are supported, ignoring: %s", command.c_str());
+                ESP_LOGW(TAG, "BLE: Missing or invalid type field in command: %s", command.c_str());
             }
             cJSON_Delete(json);
         } else {
@@ -1056,6 +1074,113 @@ void Application::SetAecMode(AecMode mode) {
 
 void Application::PlaySound(const std::string_view& sound) {
     audio_service_.PlaySound(sound);
+}
+
+void Application::ProcessBleTextCommand(const std::string& text) {
+    ESP_LOGI(TAG, "🔵 === BLE ProcessBleTextCommand() CALLED ===");
+    ESP_LOGI(TAG, "🔵 Input text: '%s' (length: %d)", text.c_str(), (int)text.length());
+    
+    if (text.empty()) {
+        ESP_LOGW(TAG, "🔵 Text is empty, not processing");
+        // Send empty response back to BLE client
+        SendBleTextResponse("error", "Text is empty");
+        return;
+    }
+    
+    // URL decode the text (same as SpeakText function)
+    std::string decoded_text;
+    for (size_t i = 0; i < text.length(); i++) {
+        if (text[i] == '+') {
+            decoded_text += ' ';
+        } else if (text[i] == '%' && i + 2 < text.length()) {
+            // Convert hex to char
+            std::string hex = text.substr(i + 1, 2);
+            char decoded_char = (char)strtol(hex.c_str(), NULL, 16);
+            decoded_text += decoded_char;
+            i += 2; // Skip the two hex digits
+        } else {
+            decoded_text += text[i];
+        }
+    }
+    
+    ESP_LOGI(TAG, "🔵 Decoded text: '%s'", decoded_text.c_str());
+    
+    // Mark web control panel as active for TTS processing (like SpeakText does)
+    SetWebControlPanelActive(true);
+    
+    // Prepare the device for TTS playback (same as SpeakText function)
+    Schedule([this]() {
+        ESP_LOGI(TAG, "🔵 Preparing device for TTS playback via BLE");
+        
+        // Make sure audio channel is open
+        if (!protocol_->IsAudioChannelOpened()) {
+            ESP_LOGI(TAG, "🔵 Opening audio channel for BLE TTS");
+            SetDeviceState(kDeviceStateConnecting);
+            if (!protocol_->OpenAudioChannel()) {
+                ESP_LOGE(TAG, "🔵 Failed to open audio channel for BLE TTS");
+                return;
+            }
+        }
+        
+        // Force speaking state
+        ESP_LOGI(TAG, "🔵 Setting device to speaking state for BLE TTS");
+        SetDeviceState(kDeviceStateSpeaking);
+        
+        ESP_LOGI(TAG, "🔵 Audio decoder reset for BLE TTS");
+    });
+    
+    // Create MCP message for text-to-speech (same as SpeakText function)
+    uint32_t message_id = esp_random() % 10000;
+    ESP_LOGI(TAG, "🔵 Generated message ID for BLE TTS: %lu", (unsigned long)message_id);
+    
+    std::string mcp_message = "{\"jsonrpc\":\"2.0\",\"id\":" + 
+                             std::to_string(message_id) + 
+                             ",\"method\":\"tts/speak\",\"params\":{\"text\":\"" + 
+                             decoded_text + "\",\"voice\":\"santa\"}}";
+    
+    ESP_LOGI(TAG, "🔵 Created MCP message for BLE TTS: %s", mcp_message.c_str());
+    
+    // Check if protocol is available
+    if (!protocol_) {
+        ESP_LOGE(TAG, "🔵 ERROR: protocol_ is NULL! Cannot send BLE TTS message");
+        SendBleTextResponse("error", "Protocol not available");
+        ble_mcp_active_ = false;
+        return;
+    }
+    
+    ESP_LOGI(TAG, "🔵 Protocol available, sending BLE TTS MCP message...");
+    
+    // Send the MCP message (this will trigger TTS and audio playback)
+    protocol_->SendMcpMessage(mcp_message);
+    
+    // Send success response back to BLE client
+    SendBleTextResponse("success", "Text-to-speech initiated");
+    
+    ESP_LOGI(TAG, "🔵 === BLE TTS MESSAGE SENT TO SERVER ===");
+    ESP_LOGI(TAG, "🔵 ProcessBleTextCommand() completed successfully");
+}
+
+void Application::SendBleTextResponse(const std::string& status, const std::string& message) {
+#if CONFIG_BT_NIMBLE_ENABLED
+    if (ble_protocol_ && ble_protocol_->IsConnected()) {
+        // Create response in expected format
+        cJSON* wrapper = cJSON_CreateObject();
+        cJSON_AddStringToObject(wrapper, "type", "text_response");
+        
+        cJSON* payload = cJSON_CreateObject();
+        cJSON_AddStringToObject(payload, "status", status.c_str());
+        cJSON_AddStringToObject(payload, "message", message.c_str());
+        cJSON_AddItemToObject(wrapper, "payload", payload);
+        
+        char* response_str = cJSON_PrintUnformatted(wrapper);
+        if (response_str) {
+            ESP_LOGI(TAG, "🔵 Sending BLE text response: %s", response_str);
+            ble_protocol_->SendResponse(std::string(response_str));
+            cJSON_free(response_str);
+        }
+        cJSON_Delete(wrapper);
+    }
+#endif
 }
 
 void Application::SpeakText(const std::string& text) {
