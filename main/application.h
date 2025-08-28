@@ -11,6 +11,7 @@
 #include <deque>
 #include <vector>
 #include <memory>
+#include <chrono>  // ADD THIS LINE for std::chrono
 
 #include "protocol.h"
 #include "ota.h"
@@ -68,11 +69,18 @@ public:
     void SetAecMode(AecMode mode);
     AecMode GetAecMode() const { return aec_mode_; }
     AudioService& GetAudioService() { return audio_service_; }
+    
+    // ADD THESE TWO METHODS for BLE connection state tracking
+    void SetBleConnectionState(bool connected);
+    bool IsBleConnected() const { return ble_connected_; }
 
 private:
     Application();
     ~Application();
 
+    std::chrono::steady_clock::time_point last_stt_time_;
+    bool stt_timeout_enabled_ = true;
+    static const int STT_TIMEOUT_SECONDS = 95; // 1 minute timeout for normal mode
     std::mutex mutex_;
     std::deque<std::function<void()>> main_tasks_;
     std::unique_ptr<Protocol> protocol_;
@@ -89,6 +97,7 @@ private:
 
     bool web_control_panel_active_ = false;
     bool ble_mcp_active_ = false;
+    bool ble_connected_ = false;  // ADD THIS LINE for BLE connection state
     bool has_server_time_ = false;
     bool aborted_ = false;
     int clock_ticks_ = 0;

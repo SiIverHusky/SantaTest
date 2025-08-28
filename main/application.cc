@@ -38,6 +38,7 @@ static const char* const STATE_STRINGS[] = {
 Application::Application() {
     event_group_ = xEventGroupCreate();
     web_control_panel_active_ = false; // Initialize the web control panel flag
+    ble_connected_ = false; // Initialize BLE connection state
 
 #if CONFIG_USE_DEVICE_AEC && CONFIG_USE_SERVER_AEC
 #error "CONFIG_USE_DEVICE_AEC and CONFIG_USE_SERVER_AEC cannot be enabled at the same time"
@@ -521,7 +522,6 @@ void Application::Start() {
                             SetDeviceState(kDeviceStateListening);
                         } else {
                             // Normal conversation: follow standard mode logic
-                            SetDeviceState(kDeviceStateIdle);
                             if (listening_mode_ == kListeningModeManualStop) {
                                 SetDeviceState(kDeviceStateIdle);
                             } else {
@@ -540,6 +540,9 @@ void Application::Start() {
                 }
             }
         } else if (strcmp(type->valuestring, "stt") == 0) {
+            // Update last STT time for timeout tracking
+            last_stt_time_ = std::chrono::steady_clock::now();
+            
             auto text = cJSON_GetObjectItem(root, "text");
             if (cJSON_IsString(text)) {
                 ESP_LOGI(TAG, ">> %s", text->valuestring);
@@ -696,8 +699,10 @@ void Application::Start() {
         }
     });
     
+    // MODIFIED: Track BLE connection state for STT timeout
     ble_protocol_->OnConnectionState([this](bool connected) {
         ESP_LOGI(TAG, "BLE connection state changed: %s", connected ? "connected" : "disconnected");
+        SetBleConnectionState(connected);
     });
     
     if (!ble_protocol_->Start()) {
@@ -707,7 +712,6 @@ void Application::Start() {
         ESP_LOGI(TAG, "BLE protocol started successfully for MCP communication");
     }
 #endif
-
 
     SetDeviceState(kDeviceStateIdle);
 
@@ -734,10 +738,42 @@ void Application::OnClockTimer() {
     auto display = Board::GetInstance().GetDisplay();
     display->UpdateStatusBar();
 
+    // Check for STT timeout 
+    if (stt_timeout_enabled_ && !ble_connected_ &&
+        (device_state_ == kDeviceStateListening || device_state_ == kDeviceStateIdle)) {
+        
+        auto now = std::chrono::steady_clock::now();
+        auto time_since_last_stt = std::chrono::duration_cast<std::chrono::seconds>(now - last_stt_time_).count();
+        
+        if (time_since_last_stt > STT_TIMEOUT_SECONDS && last_stt_time_.time_since_epoch().count() > 0) {
+            ESP_LOGI(TAG, "STT timeout detected (%d seconds) with BLE disconnected, forcing exit immediately", (int)time_since_last_stt);
+            ESP_LOGI(TAG, "Current device state: %d", (int)device_state_);
+            
+            // Play sound and force exit immediately - no timers
+            PlaySound(Lang::Sounds::P3_DEACTIVATE);
+            
+            Schedule([this]() {
+                // Wait just for sound to start
+                vTaskDelay(pdMS_TO_TICKS(100));
+                
+                // Force close the channel
+                if (protocol_ && protocol_->IsAudioChannelOpened()) {
+                    ESP_LOGI(TAG, "STT timeout: Force closing audio channel");
+                    protocol_->CloseAudioChannel();
+                } else {
+                    ESP_LOGI(TAG, "STT timeout: Channel already closed, forcing idle state");
+                    // Force idle state manually
+                    SetDeviceState(kDeviceStateIdle);
+                }
+            });
+            
+            // Reset the timestamp to prevent repeated exit commands
+            last_stt_time_ = std::chrono::steady_clock::time_point{};
+        }
+    }
+
     // Print the debug info every 10 seconds
     if (clock_ticks_ % 10 == 0) {
-        // SystemInfo::PrintTaskCpuUsage(pdMS_TO_TICKS(1000));
-        // SystemInfo::PrintTaskList();
         SystemInfo::PrintHeapStats();
     }
 }
@@ -882,6 +918,17 @@ void Application::SetDeviceState(DeviceState state) {
             display->SetStatus(Lang::Strings::LISTENING);
             display->SetEmotion("neutral");
 
+            // Initialize STT timeout tracking when entering listening mode 
+            // (only for normal mode when BLE is disconnected)
+            if (!web_control_panel_active_ && !ble_connected_) {
+                last_stt_time_ = std::chrono::steady_clock::now();
+                ESP_LOGI(TAG, "Started STT timeout tracking for normal mode (BLE disconnected)");
+            } else if (ble_connected_) {
+                ESP_LOGI(TAG, "STT timeout disabled - BLE is connected");
+            } else if (web_control_panel_active_) {
+                ESP_LOGI(TAG, "STT timeout disabled - Web control panel is active");
+            }
+
             // Make sure the audio processor is running
             if (!audio_service_.IsAudioProcessorRunning()) {
                 // Send the start listening command
@@ -953,6 +1000,7 @@ bool Application::CanEnterSleepMode() {
     return true;
 }
 
+#if CONFIG_BT_NIMBLE_ENABLED
 void Application::ProcessBleMcpCommand(const cJSON* payload) {
     ESP_LOGI(TAG, "Processing BLE MCP command");
     
@@ -993,7 +1041,6 @@ void Application::ProcessBleMcpCommand(const cJSON* payload) {
 }
 
 void Application::SendBleMcpResponse(const std::string& response) {
-#if CONFIG_BT_NIMBLE_ENABLED
     if (ble_protocol_ && ble_protocol_->IsConnected()) {
         // Wrap the JSON-RPC response in the format expected by the web app
         cJSON* wrapper = cJSON_CreateObject();
@@ -1015,65 +1062,6 @@ void Application::SendBleMcpResponse(const std::string& response) {
         }
         cJSON_Delete(wrapper);
     }
-#endif
-}
-
-void Application::SendMcpMessage(const std::string& payload) {
-    Schedule([this, payload]() {
-        // If BLE MCP is active, send response via BLE instead of main protocol
-        if (ble_mcp_active_) {
-            SendBleMcpResponse(payload);
-        } else {
-            // Send to main protocol (MQTT/WebSocket)
-            if (protocol_) {
-                protocol_->SendMcpMessage(payload);
-            }
-        }
-    });
-}
-
-void Application::SendSystemCommand(const std::string& command) {
-    Schedule([this, command]() {
-        if (protocol_) {
-            // Send system command wrapped in MCP format
-            std::string mcp_payload = "{\"type\":\"system\",\"command\":\"" + command + "\"}";
-            ESP_LOGI(TAG, "Sending system command via MCP: %s", mcp_payload.c_str());
-            protocol_->SendMcpMessage(mcp_payload);
-        } else {
-            ESP_LOGW(TAG, "Protocol not available to send system command: %s", command.c_str());
-        }
-    });
-}
-
-void Application::SetAecMode(AecMode mode) {
-    aec_mode_ = mode;
-    Schedule([this]() {
-        auto& board = Board::GetInstance();
-        auto display = board.GetDisplay();
-        switch (aec_mode_) {
-        case kAecOff:
-            audio_service_.EnableDeviceAec(false);
-            display->ShowNotification(Lang::Strings::RTC_MODE_OFF);
-            break;
-        case kAecOnServerSide:
-            audio_service_.EnableDeviceAec(false);
-            display->ShowNotification(Lang::Strings::RTC_MODE_ON);
-            break;
-        case kAecOnDeviceSide:
-            audio_service_.EnableDeviceAec(true);
-            display->ShowNotification(Lang::Strings::RTC_MODE_ON);
-            break;
-        }
-
-        // If the AEC mode is changed, close the audio channel
-        if (protocol_ && protocol_->IsAudioChannelOpened()) {
-            protocol_->CloseAudioChannel();
-        }
-    });
-}
-
-void Application::PlaySound(const std::string_view& sound) {
-    audio_service_.PlaySound(sound);
 }
 
 void Application::ProcessBleTextCommand(const std::string& text) {
@@ -1106,7 +1094,7 @@ void Application::ProcessBleTextCommand(const std::string& text) {
     ESP_LOGI(TAG, "🔵 Decoded text: '%s'", decoded_text.c_str());
     
     // Mark web control panel as active for TTS processing (like SpeakText does)
-    SetWebControlPanelActive(true);
+    // SetWebControlPanelActive(true);
     
     // Prepare the device for TTS playback (same as SpeakText function)
     Schedule([this]() {
@@ -1161,7 +1149,6 @@ void Application::ProcessBleTextCommand(const std::string& text) {
 }
 
 void Application::SendBleTextResponse(const std::string& status, const std::string& message) {
-#if CONFIG_BT_NIMBLE_ENABLED
     if (ble_protocol_ && ble_protocol_->IsConnected()) {
         // Create response in expected format
         cJSON* wrapper = cJSON_CreateObject();
@@ -1180,40 +1167,102 @@ void Application::SendBleTextResponse(const std::string& status, const std::stri
         }
         cJSON_Delete(wrapper);
     }
+}
 #endif
+
+void Application::SendMcpMessage(const std::string& payload) {
+    Schedule([this, payload]() {
+        // If BLE MCP is active, send response via BLE instead of main protocol
+#if CONFIG_BT_NIMBLE_ENABLED
+        if (ble_mcp_active_) {
+            SendBleMcpResponse(payload);
+        } else {
+#endif
+            // Send to main protocol (MQTT/WebSocket)
+            if (protocol_) {
+                protocol_->SendMcpMessage(payload);
+            }
+#if CONFIG_BT_NIMBLE_ENABLED
+        }
+#endif
+    });
 }
 
+void Application::SendSystemCommand(const std::string& command) {
+    Schedule([this, command]() {
+        if (protocol_) {
+            // Send system command wrapped in MCP format
+            std::string mcp_payload = "{\"type\":\"system\",\"command\":\"" + command + "\"}";
+            ESP_LOGI(TAG, "Sending system command via MCP: %s", mcp_payload.c_str());
+            protocol_->SendMcpMessage(mcp_payload);
+        } else {
+            ESP_LOGW(TAG, "Protocol not available to send system command: %s", command.c_str());
+        }
+    });
+}
+
+void Application::SetAecMode(AecMode mode) {
+    aec_mode_ = mode;
+    Schedule([this]() {
+        auto& board = Board::GetInstance();
+        auto display = board.GetDisplay();
+        switch (aec_mode_) {
+        case kAecOff:
+            audio_service_.EnableDeviceAec(false);
+            display->ShowNotification(Lang::Strings::RTC_MODE_OFF);
+            break;
+        case kAecOnServerSide:
+            audio_service_.EnableDeviceAec(false);
+            display->ShowNotification(Lang::Strings::RTC_MODE_ON);
+            break;
+        case kAecOnDeviceSide:
+            audio_service_.EnableDeviceAec(true);
+            display->ShowNotification(Lang::Strings::RTC_MODE_ON);
+            break;
+        }
+
+        // If the AEC mode is changed, close the audio channel
+        if (protocol_ && protocol_->IsAudioChannelOpened()) {
+            protocol_->CloseAudioChannel();
+        }
+    });
+}
+
+void Application::PlaySound(const std::string_view& sound) {
+    audio_service_.PlaySound(sound);
+}
+
+// Add new method for BLE connection state tracking:
+void Application::SetBleConnectionState(bool connected) {
+    bool was_connected = ble_connected_;
+    ble_connected_ = connected;
+    
+    ESP_LOGI(TAG, "BLE connection state: %s -> %s", 
+             was_connected ? "connected" : "disconnected",
+             connected ? "connected" : "disconnected");
+    
+    if (connected && !was_connected) {
+        // BLE just connected - disable STT timeout
+        ESP_LOGI(TAG, "BLE connected - STT timeout disabled");
+        last_stt_time_ = std::chrono::steady_clock::time_point{}; // Reset timeout tracking
+    } else if (!connected && was_connected) {
+        // BLE just disconnected - enable STT timeout if in appropriate state
+        if (!web_control_panel_active_ && 
+            (device_state_ == kDeviceStateListening || device_state_ == kDeviceStateIdle)) {
+            ESP_LOGI(TAG, "BLE disconnected - STT timeout enabled");
+            last_stt_time_ = std::chrono::steady_clock::now(); // Start timeout tracking
+        }
+    }
+}
 
 // Add these methods for web control panel support
 void Application::SetWebControlPanelActive(bool active) {
-    web_control_panel_active_ = active;
-    ESP_LOGI(TAG, "Web control panel active: %s", active ? "true" : "false");
+    // Force web control panel to always be false
+    web_control_panel_active_ = false;
+    ESP_LOGI(TAG, "Web control panel forced to inactive (always false)");
     
-    // When web control panel becomes active, open audio channel and go to listening mode
-    if (active) {
-        Schedule([this]() {
-            ESP_LOGI(TAG, "Web control panel activated - starting listening mode");
-            if (!protocol_->IsAudioChannelOpened()) {
-                ESP_LOGI(TAG, "Opening audio channel for web control panel");
-                SetDeviceState(kDeviceStateConnecting);
-                if (!protocol_->OpenAudioChannel()) {
-                    ESP_LOGE(TAG, "Failed to open audio channel for web control panel");
-                    return;
-                }
-            }
-            
-            // Set to listening mode when web panel is active
-            SetListeningMode(kListeningModeRealtime);
-        });
-    } else {
-        // When web control panel deactivates, close audio channel and go to idle
-        Schedule([this]() {
-            ESP_LOGI(TAG, "Web control panel deactivated - returning to idle mode");
-            if (protocol_ && protocol_->IsAudioChannelOpened()) {
-                protocol_->CloseAudioChannel();
-            }
-        });
-    }
+    // Don't execute any of the original logic since we're forcing it false
+    return;
 }
 
 bool Application::IsWebControlPanelActive() const {
