@@ -342,26 +342,93 @@ void McpServer::DoToolCall(int id, const std::string& tool_name, const cJSON* to
             }
         }
     } catch (const std::exception& e) {
-        ESP_LOGE(TAG, "tools/call: %s", e.what());
-        ReplyError(id, e.what());
+        ESP_LOGE(TAG, "tools/call: Argument parsing error: %s", e.what());
+        ReplyError(id, "Argument parsing error: " + std::string(e.what()));
         return;
     }
 
-    // Start a task to receive data with stack size
+    // Check system resources
+    size_t free_heap = esp_get_free_heap_size();
+    UBaseType_t task_count = uxTaskGetNumberOfTasks();
+    
+    ESP_LOGI(TAG, "Tool call %s - heap: %d, tasks: %d", 
+             tool_name.c_str(), (int)free_heap, (int)task_count);
+
+    // Configure thread parameters with better settings for ESP32
     esp_pthread_cfg_t cfg = esp_pthread_get_default_config();
-    cfg.thread_name = "tool_call";
-    cfg.stack_size = stack_size;
-    cfg.prio = 1;
+    cfg.thread_name = "mcp_tool";
+    cfg.stack_size = std::max(static_cast<size_t>(stack_size), static_cast<size_t>(4096));
+    cfg.prio = 5; // Higher priority than default
+    cfg.inherit_cfg = false; // Don't inherit config to reduce overhead
     esp_pthread_set_cfg(&cfg);
 
-    // Use a thread to call the tool to avoid blocking the main thread
-    tool_call_thread_ = std::thread([this, id, tool_iter, arguments = std::move(arguments)]() {
+    // Try to free up some tasks before creating new one
+    if (task_count >= 19) {
+        ESP_LOGW(TAG, "High task count (%d), attempting cleanup before tool execution", (int)task_count);
+        vTaskDelay(pdMS_TO_TICKS(10)); // Small delay to let other tasks finish
+        
+        // Check again after delay
+        task_count = uxTaskGetNumberOfTasks();
+        ESP_LOGI(TAG, "Task count after cleanup delay: %d", (int)task_count);
+    }
+
+    // Create thread with better error handling and retry
+    int retry_count = 0;
+    const int max_retries = 3;
+    
+    while (retry_count < max_retries) {
         try {
-            ReplyResult(id, (*tool_iter)->Call(arguments));
-        } catch (const std::exception& e) {
-            ESP_LOGE(TAG, "tools/call: %s", e.what());
-            ReplyError(id, e.what());
+            ESP_LOGI(TAG, "Creating thread for tool call: %s (attempt %d/%d, stack: %d bytes)", 
+                     tool_name.c_str(), retry_count + 1, max_retries, (int)cfg.stack_size);
+            
+            tool_call_thread_ = std::thread([this, id, tool_iter, arguments = std::move(arguments), tool_name]() {
+                ESP_LOGI(TAG, "Executing tool: %s", tool_name.c_str());
+                
+                try {
+                    auto result = (*tool_iter)->Call(arguments);
+                    ESP_LOGI(TAG, "Tool %s completed", tool_name.c_str());
+                    ReplyResult(id, result);
+                } catch (const std::exception& e) {
+                    ESP_LOGE(TAG, "Tool execution error for %s: %s", tool_name.c_str(), e.what());
+                    ReplyError(id, "Tool execution failed: " + std::string(e.what()));
+                } catch (...) {
+                    ESP_LOGE(TAG, "Unknown error executing tool: %s", tool_name.c_str());
+                    ReplyError(id, "Tool execution failed: unknown error");
+                }
+            });
+            
+            tool_call_thread_.detach();
+            ESP_LOGI(TAG, "Tool thread created successfully for: %s", tool_name.c_str());
+            return; // Success!
+            
+        } catch (const std::system_error& e) {
+            retry_count++;
+            ESP_LOGW(TAG, "Failed to create thread for tool %s (attempt %d/%d): %s (error code: %d)", 
+                     tool_name.c_str(), retry_count, max_retries, e.what(), e.code().value());
+            
+            if (retry_count < max_retries) {
+                // Wait and reduce stack size for retry
+                vTaskDelay(pdMS_TO_TICKS(50 * retry_count)); // Increasing delay
+                
+                // Fix the type casting issue here:
+                size_t reduced_stack = (cfg.stack_size > 1024) ? cfg.stack_size - 1024 : 2048;
+                cfg.stack_size = std::max(reduced_stack, static_cast<size_t>(2048));
+                
+                esp_pthread_set_cfg(&cfg);
+                ESP_LOGI(TAG, "Retrying with reduced stack size: %d bytes", (int)cfg.stack_size);
+            }
+        } catch (...) {
+            retry_count++;
+            ESP_LOGE(TAG, "Unknown error creating thread for tool %s (attempt %d/%d)", 
+                     tool_name.c_str(), retry_count, max_retries);
+            
+            if (retry_count < max_retries) {
+                vTaskDelay(pdMS_TO_TICKS(50 * retry_count));
+            }
         }
-    });
-    tool_call_thread_.detach();
+    }
+    
+    // All retries failed
+    ESP_LOGE(TAG, "Failed to create thread for tool %s after %d attempts", tool_name.c_str(), max_retries);
+    ReplyError(id, "Failed to execute tool - system resources unavailable");
 }

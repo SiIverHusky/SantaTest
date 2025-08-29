@@ -738,7 +738,28 @@ void Application::OnClockTimer() {
     auto display = Board::GetInstance().GetDisplay();
     display->UpdateStatusBar();
 
-    // Check for STT timeout 
+    // Check memory health first
+    size_t free_heap = esp_get_free_heap_size();
+    size_t min_free_heap = esp_get_minimum_free_heap_size();
+    
+    // If memory is critically low, force cleanup
+    if (free_heap < 50000) { // 50KB threshold
+        ESP_LOGW(TAG, "Critical memory low: %d bytes, forcing cleanup", (int)free_heap);
+        
+        // Force close audio channel to free memory
+        if (protocol_ && protocol_->IsAudioChannelOpened()) {
+            ESP_LOGI(TAG, "Low memory: Force closing audio channel");
+            protocol_->CloseAudioChannel();
+        }
+        
+        // Force idle state
+        SetDeviceState(kDeviceStateIdle);
+        
+        // Skip timeout logic when memory is low
+        return;
+    }
+
+    // Check for STT timeout only if memory is healthy
     if (stt_timeout_enabled_ && !ble_connected_ &&
         (device_state_ == kDeviceStateListening || device_state_ == kDeviceStateIdle)) {
         
@@ -746,34 +767,34 @@ void Application::OnClockTimer() {
         auto time_since_last_stt = std::chrono::duration_cast<std::chrono::seconds>(now - last_stt_time_).count();
         
         if (time_since_last_stt > STT_TIMEOUT_SECONDS && last_stt_time_.time_since_epoch().count() > 0) {
-            ESP_LOGI(TAG, "STT timeout detected (%d seconds) with BLE disconnected, forcing exit immediately", (int)time_since_last_stt);
-            ESP_LOGI(TAG, "Current device state: %d", (int)device_state_);
+            ESP_LOGI(TAG, "STT timeout detected (%d seconds) with BLE disconnected", (int)time_since_last_stt);
+            ESP_LOGI(TAG, "Current device state: %d, free memory: %d bytes", (int)device_state_, (int)free_heap);
             
-            // Play sound and force exit immediately - no timers
-            PlaySound(Lang::Sounds::P3_DEACTIVATE);
+            // Don't play sound if memory is low
+            if (free_heap > 100000) {
+                PlaySound(Lang::Sounds::P3_DEACTIVATE);
+            } else {
+                ESP_LOGW(TAG, "Skipping deactivate sound - low memory");
+            }
             
             Schedule([this]() {
-                // Wait just for sound to start
-                vTaskDelay(pdMS_TO_TICKS(100));
-                
-                // Force close the channel
                 if (protocol_ && protocol_->IsAudioChannelOpened()) {
                     ESP_LOGI(TAG, "STT timeout: Force closing audio channel");
                     protocol_->CloseAudioChannel();
                 } else {
                     ESP_LOGI(TAG, "STT timeout: Channel already closed, forcing idle state");
-                    // Force idle state manually
                     SetDeviceState(kDeviceStateIdle);
                 }
             });
             
-            // Reset the timestamp to prevent repeated exit commands
             last_stt_time_ = std::chrono::steady_clock::time_point{};
         }
     }
 
-    // Print the debug info every 10 seconds
+    // Print memory stats every 10 seconds with more detail
     if (clock_ticks_ % 10 == 0) {
+        ESP_LOGI(TAG, "Memory: free=%d, min_free=%d, device_state=%d", 
+                 (int)free_heap, (int)min_free_heap, (int)device_state_);
         SystemInfo::PrintHeapStats();
     }
 }
