@@ -255,8 +255,8 @@ private:
             }
             
             // ON phase - 1 second
-            SetHeadSpeed(100);
-            for (int j = 0; j < 10 && head_shake_active; j++) {
+            SetHeadSpeed(90);
+            for (int j = 0; j < 6 && head_shake_active; j++) {
                 vTaskDelay(100 / portTICK_PERIOD_MS);
             }
             
@@ -264,7 +264,7 @@ private:
             
             // OFF phase - 1 second  
             SetHeadSpeed(0);
-            for (int j = 0; j < 10 && head_shake_active; j++) {
+            for (int j = 0; j < 11 && head_shake_active; j++) {
                 vTaskDelay(100 / portTICK_PERIOD_MS);
             }
         }
