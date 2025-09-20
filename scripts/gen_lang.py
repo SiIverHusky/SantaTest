@@ -9,19 +9,19 @@ HEADER_TEMPLATE = """// Auto-generated language config
 #include <string_view>
 
 #ifndef {lang_code_for_font}
-    #define {lang_code_for_font}  // 預設語言
+    #define {lang_code_for_font}  // Default language
 #endif
 
 namespace Lang {{
-    // 语言元数据
+    // Language metadata
     constexpr const char* CODE = "{lang_code}";
 
-    // 字符串资源
+    // String resources
     namespace Strings {{
 {strings}
     }}
 
-    // 音效资源
+    // Sound resources
     namespace Sounds {{
 {sounds}
     }}
@@ -32,20 +32,20 @@ def generate_header(input_path, output_path):
     with open(input_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
-    # 验证数据结构
+    # Validate data structure
     if 'language' not in data or 'strings' not in data:
         raise ValueError("Invalid JSON structure")
 
     lang_code = data['language']['type']
 
-    # 生成字符串常量
+    # Generate string constants
     strings = []
     sounds = []
     for key, value in data['strings'].items():
         value = value.replace('"', '\\"')
         strings.append(f'        constexpr const char* {key.upper()} = "{value}";')
 
-    # 生成音效常量
+    # Generate sound effect constants
     for file in os.listdir(os.path.dirname(input_path)):
         if file.endswith('.p3'):
             base_name = os.path.splitext(file)[0]
@@ -57,7 +57,7 @@ def generate_header(input_path, output_path):
         static_cast<size_t>(p3_{base_name}_end - p3_{base_name}_start)
         }};''')
     
-    # 生成公共音效
+    # Generate common sound effects
     for file in os.listdir(os.path.join(os.path.dirname(output_path), 'common')):
         if file.endswith('.p3'):
             base_name = os.path.splitext(file)[0]
@@ -69,7 +69,7 @@ def generate_header(input_path, output_path):
         static_cast<size_t>(p3_{base_name}_end - p3_{base_name}_start)
         }};''')
 
-    # 填充模板
+    # Fill template
     content = HEADER_TEMPLATE.format(
         lang_code=lang_code,
         lang_code_for_font=lang_code.replace('-', '_').lower(),
@@ -77,15 +77,15 @@ def generate_header(input_path, output_path):
         sounds="\n".join(sorted(sounds))
     )
 
-    # 写入文件
+    # Write to file
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(content)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", required=True, help="输入JSON文件路径")
-    parser.add_argument("--output", required=True, help="输出头文件路径")
+    parser.add_argument("--input", required=True, help="Input JSON file path")
+    parser.add_argument("--output", required=True, help="Output header file path")
     args = parser.parse_args()
 
     generate_header(args.input, args.output)

@@ -43,7 +43,7 @@ protected:
     virtual void Unlock() override;
 
 protected:
-    // 添加protected构造函数
+    // Add protected constructor
     LcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel, DisplayFonts fonts, int width, int height);
     
 public:
@@ -59,7 +59,7 @@ public:
     virtual void SetTheme(const std::string& theme_name) override;
 };
 
-// RGB LCD显示器
+// RGB LCD Display
 class RgbLcdDisplay : public LcdDisplay {
 public:
     RgbLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
@@ -68,7 +68,7 @@ public:
                   DisplayFonts fonts);
 };
 
-// MIPI LCD显示器
+// MIPI LCD Display
 class MipiLcdDisplay : public LcdDisplay {
 public:
     MipiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
@@ -77,7 +77,7 @@ public:
                    DisplayFonts fonts);
 };
 
-// // SPI LCD显示器
+// // SPI LCD Display
 class SpiLcdDisplay : public LcdDisplay {
 public:
     SpiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
@@ -86,7 +86,7 @@ public:
                   DisplayFonts fonts);
 };
 
-// QSPI LCD显示器
+// QSPI LCD Display
 class QspiLcdDisplay : public LcdDisplay {
 public:
     QspiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
@@ -95,7 +95,7 @@ public:
                    DisplayFonts fonts);
 };
 
-// MCU8080 LCD显示器
+// MCU8080 LCD Display
 class Mcu8080LcdDisplay : public LcdDisplay {
 public:
     Mcu8080LcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,

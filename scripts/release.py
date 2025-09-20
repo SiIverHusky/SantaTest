@@ -68,7 +68,7 @@ def get_all_board_types():
 def release(board_type, board_config, config_filename="config.json"):
     config_path = f"main/boards/{board_type}/{config_filename}"
     if not os.path.exists(config_path):
-        print(f"跳过 {board_type} 因为 {config_filename} 不存在")
+        print(f"Skipping {board_type} because {config_filename} does not exist")
         return
 
     # Print Project Version
@@ -83,10 +83,10 @@ def release(board_type, board_config, config_filename="config.json"):
     for build in builds:
         name = build["name"]
         if not name.startswith(board_type):
-            raise ValueError(f"name {name} 必须以 {board_type} 开头")
+            raise ValueError(f"name {name} must start with {board_type}")
         output_path = f"releases/v{project_version}_{name}.zip"
         if os.path.exists(output_path):
-            print(f"跳过 {board_type} 因为 {output_path} 已存在")
+            print(f"Skipping {board_type} because {output_path} already exists")
             continue
 
         sdkconfig_append = [f"{board_config}=y"]
@@ -121,10 +121,10 @@ def release(board_type, board_config, config_filename="config.json"):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("board", nargs="?", default=None, help="板子类型或 all")
-    parser.add_argument("-c", "--config", default="config.json", help="指定 config 文件名，默认 config.json")
-    parser.add_argument("--list-boards", action="store_true", help="列出所有支持的 board 列表")
-    parser.add_argument("--json", action="store_true", help="配合 --list-boards，JSON 格式输出")
+    parser.add_argument("board", nargs="?", default=None, help="Board type or 'all'")
+    parser.add_argument("-c", "--config", default="config.json", help="Specify config filename, default is config.json")
+    parser.add_argument("--list-boards", action="store_true", help="List all supported boards")
+    parser.add_argument("--json", action="store_true", help="Output in JSON format when used with --list-boards")
     args = parser.parse_args()
 
     if args.list_boards:
@@ -145,8 +145,8 @@ if __name__ == "__main__":
                 release(board_type, board_config, config_filename=args.config)
                 found = True
         if not found:
-            print(f"未找到板子类型: {args.board}")
-            print("可用的板子类型:")
+            print(f"Board type not found: {args.board}")
+            print("Available board types:")
             for board_type in board_configs.values():
                 print(f"  {board_type}")
     else:
