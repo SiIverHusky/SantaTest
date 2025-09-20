@@ -35,6 +35,7 @@ void AfeAudioProcessor::Initialize(AudioCodec* codec, int frame_duration_ms) {
     
     afe_config_t* afe_config = afe_config_init(input_format.c_str(), NULL, AFE_TYPE_VC, AFE_MODE_HIGH_PERF);
     
+
     // ✅ Use dynamic AEC mode instead of a fixed value
     afe_config->aec_mode = (aec_mode_t)current_aec_mode_;
     afe_config->vad_mode = VAD_MODE_0;
@@ -153,6 +154,7 @@ void AfeAudioProcessor::AudioProcessorTask() {
             }
             continue;
         }
+
 
         // ✅ Print AEC status every 100 cycles
         if (clock_ticks % 100 == 0) {

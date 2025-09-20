@@ -360,6 +360,7 @@ void Application::Start() {
         if (speaking) {
         ESP_LOGI(TAG, "User speech detected via VAD!");
         
+
         // Check if TTS needs to be interrupted
             if (device_state_ == kDeviceStateSpeaking) {
                 ESP_LOGW(TAG, "User interruption detected - stopping current TTS");
