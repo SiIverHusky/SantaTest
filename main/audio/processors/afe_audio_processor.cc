@@ -35,7 +35,8 @@ void AfeAudioProcessor::Initialize(AudioCodec* codec, int frame_duration_ms) {
     
     afe_config_t* afe_config = afe_config_init(input_format.c_str(), NULL, AFE_TYPE_VC, AFE_MODE_HIGH_PERF);
     
-    // ✅ 使用动态AEC模式而不是固定值
+
+    // ✅ Use dynamic AEC mode instead of a fixed value
     afe_config->aec_mode = (aec_mode_t)current_aec_mode_;
     afe_config->vad_mode = VAD_MODE_0;
     afe_config->vad_min_noise_ms = 100;
@@ -154,7 +155,8 @@ void AfeAudioProcessor::AudioProcessorTask() {
             continue;
         }
 
-        // ✅ 每100个周期打印一次AEC状态
+
+        // ✅ Print AEC status every 100 cycles
         if (clock_ticks % 100 == 0) {
             ESP_LOGI(TAG, "AEC Mode %d running, VAD State: %d", 
                      current_aec_mode_, res->vad_state);

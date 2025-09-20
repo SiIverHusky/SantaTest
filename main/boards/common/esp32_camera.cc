@@ -13,18 +13,18 @@
 
 Esp32Camera::Esp32Camera(const camera_config_t& config) {
     // camera init
-    esp_err_t err = esp_camera_init(&config); // 配置上面定义的参数
+    esp_err_t err = esp_camera_init(&config); // Configure parameters defined above
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Camera init failed with error 0x%x", err);
         return;
     }
 
-    sensor_t *s = esp_camera_sensor_get(); // 获取摄像头型号
+    sensor_t *s = esp_camera_sensor_get(); // Get camera sensor model
     if (s->id.PID == GC0308_PID) {
-        s->set_hmirror(s, 0);  // 这里控制摄像头镜像 写1镜像 写0不镜像
+        s->set_hmirror(s, 0);  // Control camera mirror: 1 for mirror, 0 for no mirror
     }
 
-    // 初始化预览图片的内存
+    // Initialize preview image memory
     memset(&preview_image_, 0, sizeof(preview_image_));
     preview_image_.header.magic = LV_IMAGE_HEADER_MAGIC;
     preview_image_.header.cf = LV_COLOR_FORMAT_RGB565;
@@ -102,8 +102,8 @@ bool Esp32Camera::Capture() {
         }
     }
 
-    // 如果预览图片 buffer 为空，则跳过预览
-    // 但仍返回 true，因为此时图像可以上传至服务器
+    // If preview image buffer is empty, skip preview
+    // But still return true as the image can be uploaded to server
     if (preview_image_.data_size == 0) {
         ESP_LOGW(TAG, "Skip preview because of unsupported frame size");
         return true;
@@ -112,14 +112,14 @@ bool Esp32Camera::Capture() {
         ESP_LOGE(TAG, "Preview image data is not initialized");
         return true;
     }
-    // 显示预览图片
+    // Display preview image
     auto display = Board::GetInstance().GetDisplay();
     if (display != nullptr) {
         auto src = (uint16_t*)fb_->buf;
         auto dst = (uint16_t*)preview_image_.data;
         size_t pixel_count = fb_->len / 2;
         for (size_t i = 0; i < pixel_count; i++) {
-            // 交换每个16位字内的字节
+            // Swap bytes within each 16-bit word
             dst[i] = __builtin_bswap16(src[i]);
         }
         display->SetPreviewImage(&preview_image_);
@@ -161,34 +161,34 @@ bool Esp32Camera::SetVFlip(bool enabled) {
 }
 
 /**
- * @brief 将摄像头捕获的图像发送到远程服务器进行AI分析和解释
+ * @brief Send captured camera image to remote server for AI analysis and interpretation
  * 
- * 该函数将当前摄像头缓冲区中的图像编码为JPEG格式，并通过HTTP POST请求
- * 以multipart/form-data的形式发送到指定的解释服务器。服务器将根据提供的
- * 问题对图像进行AI分析并返回结果。
+ * This function encodes the current camera buffer image to JPEG format and sends it
+ * via HTTP POST request as multipart/form-data to the specified interpretation server.
+ * The server will analyze the image using AI based on the provided question and return results.
  * 
- * 实现特点：
- * - 使用独立线程编码JPEG，与主线程分离
- * - 采用分块传输编码(chunked transfer encoding)优化内存使用
- * - 通过队列机制实现编码线程和发送线程的数据同步
- * - 支持设备ID、客户端ID和认证令牌的HTTP头部配置
+ * Implementation features:
+ * - Uses separate thread for JPEG encoding, independent from main thread
+ * - Uses chunked transfer encoding to optimize memory usage
+ * - Implements data synchronization between encoding and sending threads via queue mechanism
+ * - Supports HTTP header configuration for device ID, client ID, and authentication token
  * 
- * @param question 要向AI提出的关于图像的问题，将作为表单字段发送
- * @return std::string 服务器返回的JSON格式响应字符串
- *         成功时包含AI分析结果，失败时包含错误信息
- *         格式示例：{"success": true, "result": "分析结果"}
- *                  {"success": false, "message": "错误信息"}
+ * @param question The question to ask AI about the image, sent as a form field
+ * @return std::string Server response in JSON format
+ *         Contains AI analysis results on success, error message on failure
+ *         Format examples: {"success": true, "result": "analysis result"}
+ *                         {"success": false, "message": "error message"}
  * 
- * @note 调用此函数前必须先调用SetExplainUrl()设置服务器URL
- * @note 函数会等待之前的编码线程完成后再开始新的处理
- * @warning 如果摄像头缓冲区为空或网络连接失败，将返回错误信息
+ * @note SetExplainUrl() must be called to set server URL before calling this function
+ * @note Function will wait for previous encoding thread to complete before starting new processing
+ * @warning Will return error message if camera buffer is empty or network connection fails
  */
 std::string Esp32Camera::Explain(const std::string& question) {
     if (explain_url_.empty()) {
         return "{\"success\": false, \"message\": \"Image explain URL or token is not set\"}";
     }
 
-    // 创建局部的 JPEG 队列, 40 entries is about to store 512 * 40 = 20480 bytes of JPEG data
+    // Create a local JPEG queue, 40 entries is about to store 512 * 40 = 20480 bytes of JPEG data
     QueueHandle_t jpeg_queue = xQueueCreate(40, sizeof(JpegChunk));
     if (jpeg_queue == nullptr) {
         ESP_LOGE(TAG, "Failed to create JPEG queue");
@@ -211,10 +211,10 @@ std::string Esp32Camera::Explain(const std::string& question) {
 
     auto network = Board::GetInstance().GetNetwork();
     auto http = network->CreateHttp(3);
-    // 构造multipart/form-data请求体
+    // Construct multipart/form-data request body
     std::string boundary = "----ESP32_CAMERA_BOUNDARY";
 
-    // 配置HTTP客户端，使用分块传输编码
+    // Configure HTTP client, use chunked transfer encoding
     http->SetHeader("Device-Id", SystemInfo::GetMacAddress().c_str());
     http->SetHeader("Client-Id", Board::GetInstance().GetUuid().c_str());
     if (!explain_token_.empty()) {
@@ -239,7 +239,7 @@ std::string Esp32Camera::Explain(const std::string& question) {
     }
     
     {
-        // 第一块：question字段
+        // First part: question field
         std::string question_field;
         question_field += "--" + boundary + "\r\n";
         question_field += "Content-Disposition: form-data; name=\"question\"\r\n";
@@ -248,7 +248,7 @@ std::string Esp32Camera::Explain(const std::string& question) {
         http->Write(question_field.c_str(), question_field.size());
     }
     {
-        // 第二块：文件字段头部
+        // Second part: file field header
         std::string file_header;
         file_header += "--" + boundary + "\r\n";
         file_header += "Content-Disposition: form-data; name=\"file\"; filename=\"camera.jpg\"\r\n";
@@ -257,7 +257,7 @@ std::string Esp32Camera::Explain(const std::string& question) {
         http->Write(file_header.c_str(), file_header.size());
     }
 
-    // 第三块：JPEG数据
+    // Third part: JPEG data
     size_t total_sent = 0;
     while (true) {
         JpegChunk chunk;
@@ -274,16 +274,16 @@ std::string Esp32Camera::Explain(const std::string& question) {
     }
     // Wait for the encoder thread to finish
     encoder_thread_.join();
-    // 清理队列
+    // clear queue
     vQueueDelete(jpeg_queue);
 
     {
-        // 第四块：multipart尾部
+        // Fourth part: multipart footer
         std::string multipart_footer;
         multipart_footer += "\r\n--" + boundary + "--\r\n";
         http->Write(multipart_footer.c_str(), multipart_footer.size());
     }
-    // 结束块
+    // End block
     http->Write("", 0);
 
     if (http->GetStatusCode() != 200) {

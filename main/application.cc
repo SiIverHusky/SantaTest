@@ -81,7 +81,7 @@ Application::~Application() {
 void Application::CheckNewVersion(Ota& ota) {
     const int MAX_RETRY = 10;
     int retry_count = 0;
-    int retry_delay = 10; // 初始重试延迟为10秒
+    int retry_delay = 10; // Initial retry delay is 10 seconds
 
     auto& board = Board::GetInstance();
     while (true) {
@@ -107,11 +107,11 @@ void Application::CheckNewVersion(Ota& ota) {
                     break;
                 }
             }
-            retry_delay *= 2; // 每次重试后延迟时间翻倍
+            retry_delay *= 2; // Double the delay time after each retry
             continue;
         }
         retry_count = 0;
-        retry_delay = 10; // 重置重试延迟时间
+        retry_delay = 10; // Reset retry delay time
 
         if (ota.HasNewVersion()) {
             Alert(Lang::Strings::OTA_UPGRADE, Lang::Strings::UPGRADING, "happy", Lang::Sounds::P3_UPGRADE);
@@ -360,7 +360,8 @@ void Application::Start() {
         if (speaking) {
         ESP_LOGI(TAG, "User speech detected via VAD!");
         
-        // 检查是否需要打断TTS
+
+        // Check if TTS needs to be interrupted
             if (device_state_ == kDeviceStateSpeaking) {
                 ESP_LOGW(TAG, "User interruption detected - stopping current TTS");
                 Schedule([this]() {
