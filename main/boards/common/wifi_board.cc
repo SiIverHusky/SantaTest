@@ -41,14 +41,14 @@ void WifiBoard::EnterWifiConfigMode() {
     wifi_ap.SetSsidPrefix("HeySanta");
     wifi_ap.Start();
 
-    // 显示 WiFi 配置 AP 的 SSID 和 Web 服务器 URL
+    // Display WiFi configuration AP's SSID and Web server URL
     std::string hint = Lang::Strings::CONNECT_TO_HOTSPOT;
     hint += wifi_ap.GetSsid();
     hint += Lang::Strings::ACCESS_VIA_BROWSER;
     hint += wifi_ap.GetWebServerUrl();
     hint += "\n\n";
     
-    // 播报配置 WiFi 的提示
+    // Play WiFi configuration prompt
     application.Alert(Lang::Strings::WIFI_CONFIG_MODE, hint.c_str(), "", Lang::Sounds::P3_WIFICONFIG);
 
     #if CONFIG_USE_ACOUSTIC_WIFI_PROVISIONING
@@ -175,9 +175,9 @@ void WifiBoard::ResetWifiConfiguration() {
 
 std::string WifiBoard::GetDeviceStatusJson() {
     /*
-     * 返回设备状态JSON
+     * Return device status JSON
      * 
-     * 返回的JSON结构如下：
+     * The returned JSON structure is as follows:
      * {
      *     "audio_speaker": {
      *         "volume": 70

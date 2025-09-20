@@ -195,7 +195,7 @@ bool AudioService::ReadAudioData(std::vector<int16_t>& data, int sample_rate, in
     debug_statistics_.input_count++;
 
 #if CONFIG_USE_AUDIO_DEBUGGER
-    // 音频调试：发送原始音频数据
+    // Audio debugging: send raw audio data
     if (audio_debugger_ == nullptr) {
         audio_debugger_ = std::make_unique<AudioDebugger>();
     }
@@ -584,5 +584,23 @@ void AudioService::CheckAndUpdateAudioPowerState() {
     }
     if (!codec_->input_enabled() && !codec_->output_enabled()) {
         esp_timer_stop(audio_power_timer_);
+    }
+}
+
+void AudioService::SetAecMode(int mode) {
+    ESP_LOGI(TAG, "AudioService::SetAecMode called with mode: %d", mode);
+    
+    if (audio_processor_) {
+        auto afe_processor = static_cast<AfeAudioProcessor*>(audio_processor_.get());
+        if (afe_processor) {
+            afe_processor->SetAecMode(mode);
+            
+            afe_processor->PrintAfeStatus();
+            afe_processor->PrintAvailableAecModes();
+        } else {
+            ESP_LOGE(TAG, "Failed to cast to AfeAudioProcessor");
+        }
+    } else {
+        ESP_LOGE(TAG, "Audio processor not initialized");
     }
 }

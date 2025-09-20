@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>小智声波配网</title>
+  <title>XiaoZhi Sound Wave Configuration</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body {
@@ -73,19 +73,19 @@
 </head>
 <body>
   <div class="card">
-    <h2>📶 小智声波配网</h2>
-    <label for="ssid">WiFi 名称</label>
-    <input id="ssid" type="text" value="" placeholder="请输入 WiFi 名称" />
+    <h2>📶 XiaoZhi Sound Wave Configuration</h2>
+    <label for="ssid">WiFi Name</label>
+    <input id="ssid" type="text" value="" placeholder="Please enter WiFi name" />
 
-    <label for="pwd">WiFi 密码</label>
-    <input id="pwd" type="password" value="" placeholder="请输入 WiFi 密码" />
+    <label for="pwd">WiFi Password</label>
+    <input id="pwd" type="password" value="" placeholder="Please enter WiFi password" />
 
     <div class="checkbox-container">
-      <label><input type="checkbox" id="loopCheck" checked /> 自动循环播放声波</label>
+      <label><input type="checkbox" id="loopCheck" checked /> Auto loop sound wave playback</label>
     </div>
 
-    <button onclick="generate()">🎵 生成并播放声波</button>
-    <button onclick="stopPlay()">⏹️ 停止播放</button>
+    <button onclick="generate()">🎵 Generate and Play Sound Wave</button>
+    <button onclick="stopPlay()">⏹️ Stop Playback</button>
     <audio id="player" controls></audio>
   </div>
 
@@ -189,11 +189,11 @@
       audio.load();
       audio.play();
 
-      // 修改了这里：使用 'ended' 事件来实现循环播放
+      // Modified here: Use 'ended' event to implement loop playback
       if (document.getElementById('loopCheck').checked) {
         audio.onended = function() {
-          audio.currentTime = 0;  // 从头开始
-          audio.play();           // 重新播放
+          audio.currentTime = 0;  // Start from beginning
+          audio.play();           // Play again
         };
       }
     }
@@ -201,7 +201,7 @@
     function stopPlay() {
       const audio = document.getElementById('player');
       audio.pause();
-      audio.onended = null;  // 清除事件监听
+      audio.onended = null;  // Clear event listener
     }
   </script>
 </body>

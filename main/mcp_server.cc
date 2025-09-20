@@ -263,7 +263,7 @@ void McpServer::GetToolsList(int id, const std::string& cursor) {
     std::string next_cursor = "";
     
     while (it != tools_.end()) {
-        // 如果我们还没有找到起始位置，继续搜索
+        // If we haven't found the starting position yet, continue searching
         if (!found_cursor) {
             if ((*it)->name() == cursor) {
                 found_cursor = true;
@@ -273,10 +273,10 @@ void McpServer::GetToolsList(int id, const std::string& cursor) {
             }
         }
         
-        // 添加tool前检查大小
+        // Check size before adding tool
         std::string tool_json = (*it)->to_json() + ",";
         if (json.length() + tool_json.length() + 30 > max_payload_size) {
-            // 如果添加这个tool会超出大小限制，设置next_cursor并退出循环
+            // If adding this tool would exceed size limit, set next_cursor and exit loop
             next_cursor = (*it)->name();
             break;
         }
@@ -290,7 +290,7 @@ void McpServer::GetToolsList(int id, const std::string& cursor) {
     }
     
     if (json.back() == '[' && !tools_.empty()) {
-        // 如果没有添加任何tool，返回错误
+        // If no tools were added, return error
         ESP_LOGE(TAG, "tools/list: Failed to add tool %s because of payload size limit", next_cursor.c_str());
         ReplyError(id, "Failed to add tool " + next_cursor + " because of payload size limit");
         return;
