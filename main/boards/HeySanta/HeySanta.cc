@@ -359,6 +359,17 @@ private:
             // Send a system command to the server to exit/quit
             app.SendSystemCommand("exit");
             
+            auto disconnect_task = [](void* param) {
+                vTaskDelay(500 / portTICK_PERIOD_MS); // Wait 500ms for message to be sent
+                auto& app = Application::GetInstance();
+                // Try setting device to idle/starting state
+                if (app.GetDeviceState() != kDeviceStateIdle) {
+                    app.ToggleChatState(); // Toggle to idle
+                }
+                vTaskDelete(NULL);
+            };
+            xTaskCreate(disconnect_task, "disconnect_task", 2048, NULL, 5, NULL);
+            
             return " Ho ho ho! Santa is telling the server to end this session. See you soon! 🎄";
         });
     }
