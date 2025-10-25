@@ -358,6 +358,15 @@ private:
             
             // Send a system command to the server to exit/quit
             app.SendSystemCommand("exit");
+
+             // Also trigger local disconnect after a short delay to ensure message is sent
+            auto disconnect_task = [](void* param) {
+                vTaskDelay(500 / portTICK_PERIOD_MS); // Wait 500ms for message to be sent
+                auto& app = Application::GetInstance();
+                app.Disconnect(); // Force disconnect from client side
+                vTaskDelete(NULL);
+            };
+            xTaskCreate(disconnect_task, "disconnect_task", 2048, NULL, 5, NULL);
             
             return " Ho ho ho! Santa is telling the server to end this session. See you soon! 🎄";
         });
