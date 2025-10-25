@@ -102,7 +102,7 @@ void Display::UpdateStatusBar(bool update_all) {
             return;
         }
 
-        // Update icon if mute status changes
+        // 如果静音状态改变，则更新图标
         if (codec->output_volume() == 0 && !muted_) {
             muted_ = true;
             lv_label_set_text(mute_label_, FONT_AWESOME_VOLUME_MUTE);
@@ -130,7 +130,7 @@ void Display::UpdateStatusBar(bool update_all) {
     }
 
     esp_pm_lock_acquire(pm_lock_);
-    // Update battery icon
+    // 更新电池图标
     int battery_level;
     bool charging, discharging;
     const char* icon = nullptr;
@@ -156,23 +156,23 @@ void Display::UpdateStatusBar(bool update_all) {
 
         if (low_battery_popup_ != nullptr) {
             if (strcmp(icon, FONT_AWESOME_BATTERY_EMPTY) == 0 && discharging) {
-                if (lv_obj_has_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN)) { // If low battery popup is hidden, show it
+                if (lv_obj_has_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN)) { // 如果低电量提示框隐藏，则显示
                     lv_obj_clear_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN);
                     app.PlaySound(Lang::Sounds::P3_LOW_BATTERY);
                 }
             } else {
                 // Hide the low battery popup when the battery is not empty
-                if (!lv_obj_has_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN)) { // If low battery popup is shown, hide it
+                if (!lv_obj_has_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN)) { // 如果低电量提示框显示，则隐藏
                     lv_obj_add_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN);
                 }
             }
         }
     }
 
-    // Update network icon every 10 seconds
+    // 每 10 秒更新一次网络图标
     static int seconds_counter = 0;
     if (update_all || seconds_counter++ % 10 == 0) {
-        // Don't read 4G network status during firmware upgrade to avoid occupying UART resources
+        // 升级固件时，不读取 4G 网络状态，避免占用 UART 资源
         auto device_state = Application::GetInstance().GetDeviceState();
         static const std::vector<DeviceState> allowed_states = {
             kDeviceStateIdle,
@@ -225,7 +225,7 @@ void Display::SetEmotion(const char* emotion) {
         {FONT_AWESOME_EMOJI_CONFUSED, "confused"}
     };
     
-    // Find matching emotion
+    // 查找匹配的表情
     std::string_view emotion_view(emotion);
     auto it = std::find_if(emotions.begin(), emotions.end(),
         [&emotion_view](const Emotion& e) { return e.text == emotion_view; });
@@ -235,7 +235,7 @@ void Display::SetEmotion(const char* emotion) {
         return;
     }
 
-    // If a matching emotion is found, display the corresponding icon, otherwise show the default neutral emotion
+    // 如果找到匹配的表情就显示对应图标，否则显示默认的neutral表情
     if (it != emotions.end()) {
         lv_label_set_text(emotion_label_, it->icon);
     } else {

@@ -92,10 +92,10 @@ void SleepTimer::CheckTimer() {
                     lv_refr_now(nullptr);
                     lvgl_port_stop();
     
-                    // Configure timer as wake-up source (auto wake-up after 30 seconds)
+                    // 配置timer唤醒源（30秒后自动唤醒）
                     esp_sleep_enable_timer_wakeup(30 * 1000000);
                     
-                    // Enter light sleep mode
+                    // 进入light sleep模式
                     esp_light_sleep_start();
                     lvgl_port_resume();
 

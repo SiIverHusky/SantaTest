@@ -26,21 +26,21 @@ namespace audio_wifi_config
 
         while (true)
         {
-            // Check Application state, only process audio in WiFi configuration mode
+            // 检查Application状态，只有在WiFi配置模式下才处理音频
             if (app->GetDeviceState() != kDeviceStateWifiConfiguring) {
-                // Not in WiFi configuration state, sleep 100ms before checking again
+                // 不在WiFi配置状态，休眠100ms后再检查
                 vTaskDelay(pdMS_TO_TICKS(100));
                 continue;
             }
             
             if (!app->GetAudioService().ReadAudioData(audio_data, 16000, 480)) { // 16kHz, 480 samples corresponds to 30ms data
-                // Failed to read audio, retry after short delay
+                // 读取音频失败，短暂延迟后重试
                 ESP_LOGI(kLogTag, "Failed to read audio data, retrying.");
                 vTaskDelay(pdMS_TO_TICKS(10));
                 continue;
             }
 
-            if (input_channels == 2) { // If stereo input, convert to mono
+            if (input_channels == 2) { // 如果是双声道输入，转换为单声道
                 auto mono_data = std::vector<int16_t>(audio_data.size() / 2);
                 for (size_t i = 0, j = 0; i < mono_data.size(); ++i, j += 2) {
                     mono_data[i] = audio_data[j];

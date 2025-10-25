@@ -1,45 +1,45 @@
-# LVGL Image Conversion Tools
+# LVGL图片转换工具  
 
-This directory contains two Python scripts for processing and converting images to LVGL format:
+这个目录包含两个用于处理和转换图片为LVGL格式的Python脚本：
 
 ## 1. LVGLImage (LVGLImage.py)
 
-Referenced from LVGL [official repo](https://github.com/lvgl/lvgl)'s conversion script [LVGLImage.py](https://github.com/lvgl/lvgl/blob/master/scripts/LVGLImage.py)
+引用自LVGL[官方repo](https://github.com/lvgl/lvgl)的转换脚本[LVGLImage.py](https://github.com/lvgl/lvgl/blob/master/scripts/LVGLImage.py)  
 
-## 2. LVGL Image Conversion Tool (lvgl_tools_gui.py)
+## 2. LVGL图片转换工具 (lvgl_tools_gui.py)
 
-Calls `LVGLImage.py` to batch convert images to LVGL image format.
-Can be used to modify XiaoZhi's default expressions, detailed modification tutorial [here](https://www.bilibili.com/video/BV12FQkYeEJ3/)
+调用`LVGLImage.py`，将图片批量转换为LVGL图片格式  
+可用于修改小智的默认表情，具体修改教程[在这里](https://www.bilibili.com/video/BV12FQkYeEJ3/)
 
-### Features
+### 特性
 
-- Graphical interface, more user-friendly
-- Supports batch image conversion
-- Automatically detects image format and selects the best color format for conversion
-- Multiple resolution support
+- 图形化操作，界面更友好
+- 支持批量转换图片
+- 自动识别图片格式并选择最佳的颜色格式转换
+- 多分辨率支持
 
-### Usage
+### 使用方法
 
-Create virtual environment
+创建虚拟环境
 ```bash
-# Create venv
+# 创建 venv
 python -m venv venv
-# Activate environment
+# 激活环境
 source venv/bin/activate  # Linux/Mac
-venv\Scripts\activate     # Windows
+venv\Scripts\activate      # Windows
 ```
 
-Install dependencies
+安装依赖
 ```bash
 pip install -r requirements.txt
 ```
 
-Run conversion tool
+运行转换工具
+
 ```bash
-# Activate environment  
+# 激活环境
 source venv/bin/activate  # Linux/Mac
-venv\Scripts\activate     # Windows
-# Run
+venv\Scripts\activate      # Windows
+# 运行
 python lvgl_tools_gui.py
 ```
-
